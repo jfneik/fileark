@@ -13,6 +13,9 @@ fileark-web/src/main/resources/static/
 *.db-shm
 .fileark/
 
+# Test runtime state
+.jqwik-database
+
 # IDE
 .idea/
 *.iml
