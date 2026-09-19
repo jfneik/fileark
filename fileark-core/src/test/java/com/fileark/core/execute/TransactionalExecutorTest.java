@@ -3,6 +3,7 @@ package com.fileark.core.execute;
 import com.fileark.core.fixture.InMemoryStores;
 import com.fileark.core.plan.Operation;
 import com.fileark.core.plan.OperationStatus;
+import com.fileark.core.plan.Plan;
 import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.port.PlanStore;
 import com.fileark.core.port.UndoLogStore;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -124,6 +126,7 @@ class TransactionalExecutorTest {
         // 两份文件都必须回到原位（第 1 条已成功 → 自动回滚；第 2 条从未执行）
         assertThat(Files.exists(a)).isTrue();
         assertThat(Files.exists(b)).isTrue();
+        // 第 1 条的撤销日志已应用；第 2 条未发生任何移动，日志也已收尾
         assertThat(undoLogStore.pendingOfPlan(planId)).allMatch(UndoRecord::applied);
     }
 

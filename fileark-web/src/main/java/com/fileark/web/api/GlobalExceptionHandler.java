@@ -39,7 +39,7 @@ public class GlobalExceptionHandler {
 
     private static HttpStatus statusOf(String code) {
         return switch (code) {
-            case "INVALID_REQUEST" -> HttpStatus.BAD_REQUEST;
+            case "INVALID_REQUEST", "INVALID_PATH" -> HttpStatus.BAD_REQUEST;
             case "IO_ERROR" -> HttpStatus.INTERNAL_SERVER_ERROR;
             default -> HttpStatus.CONFLICT;
         };

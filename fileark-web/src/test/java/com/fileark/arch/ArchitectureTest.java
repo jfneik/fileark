@@ -9,7 +9,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /** 架构守护（设计文档 §9）：模块依赖方向与 core 的零框架约束。 */
 @AnalyzeClasses(packages = "com.fileark", importOptions = ImportOption.DoNotIncludeTests.class)
-class ArchTest {
+class ArchitectureTest {
 
     @ArchTest
     static final ArchRule coreMustNotDependOnSpring =

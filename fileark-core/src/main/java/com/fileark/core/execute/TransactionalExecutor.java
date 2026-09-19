@@ -46,8 +46,7 @@ public final class TransactionalExecutor {
     }
 
     public Plan execute(long planId) {
-        Plan plan = planStore.findPlan(planId)
-                .orElseThrow(() -> new FileArkException(ErrorCode.INVALID_REQUEST, "计划不存在: " + planId));
+        Plan plan = loadPlan(planId);
         if (plan.status() != PlanStatus.PLANNED) {
             throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE,
                     "计划不可执行，当前状态: " + plan.status());
@@ -71,8 +70,11 @@ public final class TransactionalExecutor {
         Deque<Operation> done = new ArrayDeque<>();
         try {
             for (Operation op : executable) {
-                writeUndoBeforeMutation(planId, op);
-                perform(op);
+                // 安全区目标路径只生成一次：撤销日志与实际移动必须指向同一路径
+                Path quarantineTarget = op.type() == OperationType.DELETE_TO_QUARANTINE
+                        ? quarantineTarget(op.src()) : null;
+                writeUndoBeforeMutation(planId, op, quarantineTarget);
+                perform(op, quarantineTarget);
                 planStore.updateOperationStatus(planId, op.id(), OperationStatus.DONE, null);
                 done.push(op);
             }
@@ -81,18 +83,25 @@ public final class TransactionalExecutor {
             Operation failed = done.peek() == null ? executable.get(0) : executable.stream()
                     .filter(o -> !done.contains(o)).findFirst().orElse(executable.get(0));
             planStore.updateOperationStatus(planId, failed.id(), OperationStatus.FAILED, e.getMessage());
-            rollbackDone(planId, done);
+            try {
+                cleanupFailedOp(planId, failed);
+                rollbackDone(planId, done);
+            } catch (Exception rollbackError) {
+                planStore.updatePlanStatus(planId, PlanStatus.NEEDS_REVIEW,
+                        "执行失败且回滚未完成，需人工复核: " + rollbackError.getMessage());
+                throw new FileArkException(ErrorCode.ROLLBACK_FAILED,
+                        "执行失败且自动回滚未完成，已转入人工复核", "planId=" + planId);
+            }
             planStore.updatePlanStatus(planId, PlanStatus.FAILED, e.getMessage());
             throw new FileArkException(ErrorCode.EXECUTION_FAILED,
                     "执行失败并已自动回滚: " + e.getMessage(), "planId=" + planId);
         }
-        return planStore.findPlan(planId).orElseThrow();
+        return loadPlan(planId);
     }
 
     /** 用户主动撤销：仅 EXECUTED 状态可撤销，逆序回滚全部 DONE 操作。 */
     public Plan rollback(long planId) {
-        Plan plan = planStore.findPlan(planId)
-                .orElseThrow(() -> new FileArkException(ErrorCode.INVALID_REQUEST, "计划不存在: " + planId));
+        Plan plan = loadPlan(planId);
         if (plan.status() != PlanStatus.EXECUTED) {
             throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE,
                     "仅 EXECUTED 状态可撤销，当前状态: " + plan.status());
@@ -107,7 +116,15 @@ public final class TransactionalExecutor {
         }
         rollbackDone(planId, done);
         planStore.updatePlanStatus(planId, PlanStatus.ROLLED_BACK, null);
-        return planStore.findPlan(planId).orElseThrow();
+        return loadPlan(planId);
+    }
+
+    /** 端口返回行记录，领域层用它重组完整的 Plan 聚合。 */
+    private Plan loadPlan(long planId) {
+        com.fileark.core.port.PlanStore.PlanRow row = planStore.findPlan(planId)
+                .orElseThrow(() -> new FileArkException(ErrorCode.INVALID_REQUEST, "计划不存在: " + planId));
+        return new Plan(row.id(), row.status(), row.description(), row.error(),
+                planStore.operationsOf(planId));
     }
 
     /** 对已成功操作逆序应用撤销日志。任一条失败不中断其余回滚，最后聚合报错。 */
@@ -134,7 +151,41 @@ public final class TransactionalExecutor {
         }
     }
 
-    private void writeUndoBeforeMutation(long planId, Operation op) {
+    /**
+     * 失败条目的收尾：它可能已建好目标目录但没完成移动。确认没有实际文件移动后，
+     * 回收新建的空目录并把它的撤销日志标记为已应用，避免留下永远 pending 的日志。
+     */
+    private void cleanupFailedOp(long planId, Operation failed) {
+        List<UndoRecord> records = undoLogStore.forOperation(planId, failed.id());
+        if (records.isEmpty()) {
+            return;
+        }
+        UndoRecord record = records.getFirst();
+        try {
+            UndoPayload p = fromJson(record.payloadJson());
+            boolean mutated = switch (record.kind()) {
+                case MOVE_BACK, RENAME_BACK -> fileOps.exists(Path.of(p.dst()));
+                case RESTORE_FROM_QUARANTINE -> fileOps.exists(Path.of(p.quarantinePath()));
+            };
+            if (mutated) {
+                return; // 移动已发生但状态未落库：交给 RecoveryService 恢复，不能擅自清理
+            }
+            if (p.createdDirs() != null) {
+                List<String> dirs = new ArrayList<>(p.createdDirs());
+                dirs.sort((a, b) -> Integer.compare(b.length(), a.length()));
+                for (String d : dirs) {
+                    if (!fileOps.deleteDirIfEmpty(Path.of(d))) {
+                        break;
+                    }
+                }
+            }
+            undoLogStore.markApplied(planId, failed.id());
+        } catch (IOException ignored) {
+            // 收尾失败不影响主流程：撤销日志保留待人工核对
+        }
+    }
+
+    private void writeUndoBeforeMutation(long planId, Operation op, Path quarantineTarget) {
         UndoPayload payload = switch (op.type()) {
             case MOVE -> {
                 List<Path> created = missingParents(op.dst().getParent());
@@ -143,7 +194,7 @@ public final class TransactionalExecutor {
             }
             case RENAME -> new UndoPayload(op.src().toString(), op.dst().toString(), null, List.of());
             case DELETE_TO_QUARANTINE -> new UndoPayload(op.src().toString(), null,
-                    quarantineTarget(op.src()).toString(), List.of());
+                    quarantineTarget.toString(), List.of());
         };
         UndoKind kind = switch (op.type()) {
             case MOVE -> UndoKind.MOVE_BACK;
@@ -153,7 +204,7 @@ public final class TransactionalExecutor {
         undoLogStore.append(planId, op.id(), kind, toJson(payload));
     }
 
-    private void perform(Operation op) throws IOException {
+    private void perform(Operation op, Path quarantineTarget) throws IOException {
         switch (op.type()) {
             case MOVE -> {
                 fileOps.mkdirs(op.dst().getParent());
@@ -162,7 +213,7 @@ public final class TransactionalExecutor {
             case RENAME -> fileOps.move(op.src(), op.dst());
             case DELETE_TO_QUARANTINE -> {
                 fileOps.mkdirs(quarantineDir);
-                fileOps.move(op.src(), quarantineTarget(op.src()));
+                fileOps.move(op.src(), quarantineTarget);
             }
         }
     }

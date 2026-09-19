@@ -72,9 +72,10 @@ public final class InMemoryStores {
             List<FileMeta> out = new ArrayList<>(entries.size());
             for (FileMeta f : entries) {
                 long id = seq.incrementAndGet();
-                byId.put(id, f);
+                FileMeta stored = new FileMeta(id, f.path(), f.size(), f.mtime(), f.mimeType(), f.category());
+                byId.put(id, stored);
                 scanOf.put(id, scanId);
-                out.add(new FileMeta(id, f.path(), f.size(), f.mtime(), f.mimeType(), f.category()));
+                out.add(stored);
             }
             return out;
         }
@@ -214,7 +215,9 @@ public final class InMemoryStores {
 
         @Override
         public List<Operation> operationsOf(long planId) {
-            return ops.getOrDefault(planId, List.of());
+            // 返回快照而非内部列表：仓储不得暴露可变内部状态，
+            // 否则调用方迭代期间 store 更新状态会触发 ConcurrentModificationException
+            return new ArrayList<>(ops.getOrDefault(planId, List.of()));
         }
 
         @Override

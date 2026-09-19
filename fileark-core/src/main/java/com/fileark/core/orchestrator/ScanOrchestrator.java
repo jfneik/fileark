@@ -81,7 +81,19 @@ public final class ScanOrchestrator {
             metas = fileRepository.insertAll(scanId, metas);
 
             listener.onPhase("SUSPECTING");
-            List<DuplicateDetector.SuspectedGroup> suspected = detector.findSuspected(metas, listener);
+            // 编排层事件接口与扫描进度接口是两个体系，此处做一次桥接
+            List<DuplicateDetector.SuspectedGroup> suspected = detector.findSuspected(metas,
+                    new ScanListener() {
+                        @Override
+                        public void onProgress(Path current, int count) {
+                            listener.onProgress(count, current.toString());
+                        }
+
+                        @Override
+                        public boolean cancelled() {
+                            return listener.cancelled();
+                        }
+                    });
             listener.onSuspectedGroups(suspected.size());
             List<Long> suspectedIds = new ArrayList<>();
             for (DuplicateDetector.SuspectedGroup g : suspected) {
@@ -100,7 +112,7 @@ public final class ScanOrchestrator {
                     return;
                 }
                 List<DuplicateDetector.ConfirmedGroup> confirmed =
-                        confirmInParallel(suspected.get(i), listener);
+                        confirmInParallel(suspected.get(i));
                 for (DuplicateDetector.ConfirmedGroup cg : confirmed) {
                     duplicateStore.createGroup(scanId, cg.contentHash(),
                             DuplicateStore.GroupStatus.CONFIRMED, ids(cg.members()));
@@ -124,7 +136,12 @@ public final class ScanOrchestrator {
                 listener.onPhase("FAILED");
                 throw e;
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
+            scanStore.updateStatus(scanId, ScanStatus.FAILED, errorStats(e));
+            listener.onPhase("FAILED");
+            throw new FileArkException(com.fileark.core.exception.ErrorCode.IO_ERROR,
+                    "扫描失败: " + e.getMessage(), e.toString());
+        } catch (RuntimeException e) {
             scanStore.updateStatus(scanId, ScanStatus.FAILED, errorStats(e));
             listener.onPhase("FAILED");
             throw e;
@@ -133,7 +150,7 @@ public final class ScanOrchestrator {
 
     /** 组内成员并行全量哈希；信号量限制并发文件句柄数。 */
     private List<DuplicateDetector.ConfirmedGroup> confirmInParallel(
-            DuplicateDetector.SuspectedGroup group, ScanEventListener listener) {
+            DuplicateDetector.SuspectedGroup group) {
         Semaphore permits = new Semaphore(hashConcurrency);
         List<Future<String>> futures = new ArrayList<>();
         for (FileMeta m : group.members()) {

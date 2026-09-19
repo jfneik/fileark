@@ -18,12 +18,13 @@ class DHashTest {
         return img;
     }
 
-    private BufferedImage verticalGradient(int w, int h, boolean flipped) {
+    private BufferedImage horizontalGradient(int w, int h, boolean flipped) {
+        // dHash 比较水平相邻像素，必须用水平方向变化的梯度
         BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        for (int y = 0; y < h; y++) {
-            int v = flipped ? 255 - y * 255 / h : y * 255 / h;
+        for (int x = 0; x < w; x++) {
+            int v = flipped ? 255 - x * 255 / w : x * 255 / w;
             int rgb = (v << 16) | (v << 8) | v;
-            for (int x = 0; x < w; x++) {
+            for (int y = 0; y < h; y++) {
                 img.setRGB(x, y, rgb);
             }
         }
@@ -46,15 +47,15 @@ class DHashTest {
 
     @Test
     void gradientVsFlippedGradientIsFar() {
-        long a = DHash.hash(verticalGradient(100, 100, false));
-        long b = DHash.hash(verticalGradient(100, 100, true));
+        long a = DHash.hash(horizontalGradient(100, 100, false));
+        long b = DHash.hash(horizontalGradient(100, 100, true));
         assertThat(DHash.distance(a, b)).isEqualTo(64);
     }
 
     @Test
     void resizedGradientKeepsDirection() {
-        long big = DHash.hash(verticalGradient(200, 200, false));
-        long small = DHash.hash(verticalGradient(60, 40, false));
+        long big = DHash.hash(horizontalGradient(200, 200, false));
+        long small = DHash.hash(horizontalGradient(60, 40, false));
         assertThat(DHash.distance(big, small)).isLessThanOrEqualTo(8);
     }
 }

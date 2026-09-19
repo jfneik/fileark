@@ -2,8 +2,6 @@ package com.fileark.core.plan;
 
 import com.fileark.core.dedup.DuplicateDetector;
 import com.fileark.core.dedup.KeepStrategy;
-import com.fileark.core.exception.ErrorCode;
-import com.fileark.core.exception.FileArkException;
 import com.fileark.core.model.FileMeta;
 import com.fileark.core.rule.ActionType;
 import com.fileark.core.rule.PathTemplate;
@@ -66,10 +64,10 @@ public final class Planner {
                     yield Operation.pending(OperationType.RENAME, f.path(),
                             f.path().resolveSibling(newName), f.size(), f.mtime());
                 }
-                case TAG -> throw new FileArkException(ErrorCode.INVALID_REQUEST,
-                        "TAG 动作暂不生成文件操作，仅用于标记");
+                // TAG 仅做标记、不产生文件操作：跳过而不是让整个计划构建失败
+                case TAG -> null;
             };
-            if (op.dst() == null || !op.dst().equals(op.src())) {
+            if (op != null && (op.dst() == null || !op.dst().equals(op.src()))) {
                 ops.add(op);
             }
         }

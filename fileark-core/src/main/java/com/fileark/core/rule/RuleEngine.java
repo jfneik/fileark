@@ -1,6 +1,5 @@
 package com.fileark.core.rule;
 
-import com.fileark.core.model.Category;
 import com.fileark.core.model.FileMeta;
 
 import java.time.Clock;
@@ -76,10 +75,5 @@ public final class RuleEngine {
                 default -> false;
             };
         }
-    }
-
-    /** 仅供 UI 提示用：TYPE 条件的合法取值。 */
-    public static List<String> typeValues() {
-        return List.of(Category.values()).stream().map(Enum::name).toList();
     }
 }

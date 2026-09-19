@@ -4,6 +4,7 @@ import com.fileark.core.fixture.InMemoryStores;
 import com.fileark.core.model.Category;
 import com.fileark.core.model.FileMeta;
 import com.fileark.core.plan.Operation;
+import com.fileark.core.plan.Planner;
 import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.port.PlanStore;
 import com.fileark.core.port.UndoLogStore;
@@ -53,9 +54,9 @@ class RollbackPropertiesTest {
 
     @Provide
     static Arbitrary<TreeSpec> trees() {
-        Arbitrary<Integer> i = Arbitraries.integers().range(0, 4);
-        Arbitrary<Integer> j = Arbitraries.integers().range(0, 4);
-        Arbitrary<Integer> depth = Arbitraries.integers().range(0, 3);
+        Arbitrary<Integer> i = Arbitraries.integers().between(0, 4);
+        Arbitrary<Integer> j = Arbitraries.integers().between(0, 4);
+        Arbitrary<Integer> depth = Arbitraries.integers().between(0, 3);
         Arbitrary<String> rels = Combinators.combine(i, j, depth).as((a, b, d) -> switch (d) {
             case 0 -> "f" + a + "_" + b + ".txt";
             case 1 -> "d" + a + "/f" + b + ".txt";
@@ -69,9 +70,9 @@ class RollbackPropertiesTest {
 
     @Provide
     static Arbitrary<List<MoveSpec>> moveSpecs() {
-        Arbitrary<Integer> from = Arbitraries.integers().range(0, 7);
-        Arbitrary<Integer> to = Arbitraries.integers().range(0, 7);
-        Arbitrary<Integer> kind = Arbitraries.integers().range(0, 1);
+        Arbitrary<Integer> from = Arbitraries.integers().between(0, 7);
+        Arbitrary<Integer> to = Arbitraries.integers().between(0, 7);
+        Arbitrary<Integer> kind = Arbitraries.integers().between(0, 1);
         return Combinators.combine(from, to, kind).as(MoveSpec::new)
                 .list().ofMaxSize(5);
     }
@@ -80,7 +81,7 @@ class RollbackPropertiesTest {
     static Arbitrary<List<Rule>> rules() {
         Arbitrary<String> typeVal = Arbitraries.of("IMAGE", "DOCUMENT");
         Arbitrary<String> template = Arbitraries.of("{type}", "{type}/{yyyy}", "sorted");
-        Arbitrary<Integer> prio = Arbitraries.integers().range(1, 9);
+        Arbitrary<Integer> prio = Arbitraries.integers().between(1, 9);
         return Combinators.combine(typeVal, template, prio).as((t, tpl, p) ->
                 new Rule(0, "r" + p, p, true,
                         List.of(new Condition(FieldType.TYPE, Operator.EQ, t)),

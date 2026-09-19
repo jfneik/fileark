@@ -5,6 +5,7 @@
 target/
 node_modules/
 dist/
+fileark-web/src/main/resources/static/
 
 # Runtime data
 *.db

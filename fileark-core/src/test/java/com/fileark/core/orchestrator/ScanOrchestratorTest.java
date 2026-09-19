@@ -32,9 +32,9 @@ class ScanOrchestratorTest {
         Files.write(dir.resolve("b.bin"), payload);
         Files.write(dir.resolve("c.bin"), new byte[]{1, 2, 3, 4});
 
-        ScanStore scanStore = new InMemoryStores.MemScanStore();
-        FileRepository repo = new InMemoryStores.MemFileRepository();
-        DuplicateStore dupStore = new InMemoryStores.MemDuplicateStore();
+        InMemoryStores.MemScanStore scanStore = new InMemoryStores.MemScanStore();
+        InMemoryStores.MemFileRepository repo = new InMemoryStores.MemFileRepository();
+        InMemoryStores.MemDuplicateStore dupStore = new InMemoryStores.MemDuplicateStore();
         ExecutorService hashPool = Executors.newVirtualThreadPerTaskExecutor();
         ScanOrchestrator orchestrator = new ScanOrchestrator(
                 scanStore, repo, dupStore, new DuplicateDetector(), hashPool, 4);

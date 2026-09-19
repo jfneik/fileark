@@ -29,7 +29,10 @@ function startScan() {
   api.createScan(rootPath.value).then(({ data }) => {
     ElMessage.success(`扫描 #${data.scanId} 已启动`)
     const es = new EventSource(`/api/scans/${data.scanId}/events`)
-    es.addEventListener('progress', e => { progress.value = `已索引 ${e.data} 个文件` })
+    es.addEventListener('progress', e => {
+      const d = JSON.parse(e.data)
+      progress.value = `已索引 ${d.count} 个文件（${d.current}）`
+    })
     es.addEventListener('suspected', e => { progress.value += `，疑似重复组 ${e.data} 个` })
     es.addEventListener('confirmed', e => { progress.value += `，已确认 ${e.data}` })
     es.addEventListener('phase', e => {
@@ -67,13 +70,13 @@ async function previewGroup(g: DuplicateGroup) {
 
 async function createPlanFromPreview() {
   if (!preview.value || !previewGroupId.value) return
-  await api.createPlan({
+  const { data: created } = await api.createPlan({
     kind: 'DUPLICATE_CLEANUP',
     refId: previewGroupId.value,
     keepStrategy: 'NEWEST'
   })
   previewVisible.value = false
-  ElMessage.success(`计划 #${preview.value.id} 已创建，请到「执行中心」执行`)
+  ElMessage.success(`计划 #${created.id} 已创建，请到「执行中心」执行`)
 }
 
 async function confirmCreateAndExecute(g: DuplicateGroup) {
@@ -83,16 +86,21 @@ async function confirmCreateAndExecute(g: DuplicateGroup) {
     return
   }
   const kept = g.members.find(m => m.id === keepId)
-  if (kept) {
-    await ElMessageBox.confirm(
-      `将保留：${kept.path}\n其余 ${g.members.length - 1} 个副本移入安全区（可撤销）。确认？`,
-      '创建并执行清理计划', { type: 'warning' })
+  try {
+    if (kept) {
+      await ElMessageBox.confirm(
+        `将保留：${kept.path}\n其余 ${g.members.length - 1} 个副本移入安全区（可撤销）。确认？`,
+        '创建并执行清理计划', { type: 'warning' })
+    }
+    const keepStrategy: CreatePlanRequest['keepStrategy'] = 'NEWEST'
+    const { data: plan } = await api.createPlan({ kind: 'DUPLICATE_CLEANUP', refId: g.id, keepStrategy })
+    const { data: executed } = await api.execute(plan.id)
+    ElMessage.success(`计划 #${executed.id} 已执行：${executed.status}`)
+    if (selectedScanId.value) await selectScan(selectedScanId.value)
+  } catch (e: unknown) {
+    // 用户在确认框点取消时 errText 为 'cancel'，不打扰
+    if (errText(e) !== 'cancel') ElMessage.error(errText(e))
   }
-  const keepStrategy: CreatePlanRequest['keepStrategy'] = 'NEWEST'
-  const { data: plan } = await api.createPlan({ kind: 'DUPLICATE_CLEANUP', refId: g.id, keepStrategy })
-  const { data: executed } = await api.execute(plan.id)
-  ElMessage.success(`计划 #${executed.id} 已执行：${executed.status}`)
-  if (selectedScanId.value) await selectScan(selectedScanId.value)
 }
 
 function fmtSize(bytes: number): string {

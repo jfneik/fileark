@@ -2,6 +2,7 @@ package com.fileark.core.execute;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fileark.core.fixture.InMemoryStores;
+import com.fileark.core.plan.Operation;
 import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.port.PlanStore;
 import com.fileark.core.port.UndoLogStore;

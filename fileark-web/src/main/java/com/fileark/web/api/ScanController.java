@@ -83,8 +83,13 @@ public class ScanController {
 
     @GetMapping(value = "/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@PathVariable long id) {
-        scanStore.find(id).orElseThrow(() ->
+        ScanStore.ScanRow row = scanStore.find(id).orElseThrow(() ->
                 new FileArkException(ErrorCode.INVALID_REQUEST, "扫描不存在: " + id));
-        return sseHub.subscribe(id);
+        SseEmitter emitter = sseHub.subscribe(id);
+        // 立即推送当前状态：订阅已结束的扫描时，前端能据此关闭连接而不是空等
+        String phase = row.status() == com.fileark.core.scan.ScanStatus.RUNNING
+                ? "SCANNING" : row.status().name();
+        sseHub.send(id, "phase", phase);
+        return emitter;
     }
 }

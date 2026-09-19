@@ -67,6 +67,10 @@ public final class RecoveryService {
                 // 保证与用户手动撤销走完全相同的代码路径
                 planStore.updatePlanStatus(row.id(), PlanStatus.EXECUTED, null);
                 executor.rollback(row.id());
+                if (contradiction) {
+                    planStore.updatePlanStatus(row.id(), PlanStatus.NEEDS_REVIEW,
+                            "已回滚可核对的条目；存在无法核对的条目，需人工复核");
+                }
             } else {
                 planStore.updatePlanStatus(row.id(),
                         contradiction ? PlanStatus.NEEDS_REVIEW : PlanStatus.ROLLED_BACK,

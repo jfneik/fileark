@@ -24,6 +24,7 @@ class QuarantineManagerTest {
         Path quarantine = dir.resolve("quarantine");
         QuarantineManager manager = new QuarantineManager(quarantine, new FsFileOps(),
                 Clock.systemUTC(), 30);
+        Files.createDirectories(dir.resolve("old/deep"));
         Path src = Files.write(dir.resolve("old/deep/x.txt"), "X".getBytes());
 
         Path admitted = manager.admit(src);
