@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: fileark
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+app:
+  # SQLite 数据库文件与安全区目录；~ 会在启动时展开为用户主目录
+  db-path: ~/.fileark/fileark.db
+  quarantine-dir: ~/.fileark/quarantine
+  retention-days: 30
+  # 全量哈希阶段同时打开的文件句柄上限（虚拟线程 + 信号量限流）
+  hash-concurrency: 64
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.fileark: INFO
