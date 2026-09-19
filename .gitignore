@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Build
+target/
+node_modules/
+dist/
+
+# Runtime data
+*.db
+*.db-wal
+*.db-shm
+.fileark/
+
+# IDE
+.idea/
+*.iml
+.vscode/
