@@ -95,6 +95,24 @@ public final class SqliteFileRepository implements FileRepository {
         updateSingle("UPDATE file_entry SET skip_reason = ? WHERE id = ?", reason, id);
     }
 
+    @Override
+    public java.util.Optional<String> findReusableContentHash(String path, long size, Instant mtime) {
+        try (var conn = db.open();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT content_hash FROM file_entry " +
+                             "WHERE path = ? AND size = ? AND mtime = ? AND content_hash IS NOT NULL " +
+                             "ORDER BY id DESC LIMIT 1")) {
+            ps.setString(1, path);
+            ps.setLong(2, size);
+            ps.setString(3, mtime.toString());
+            try (var rs = ps.executeQuery()) {
+                return rs.next() ? java.util.Optional.ofNullable(rs.getString(1)) : java.util.Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private void updateSingle(String sql, String value, long id) {
         try (var conn = db.open();
              PreparedStatement ps = conn.prepareStatement(sql)) {

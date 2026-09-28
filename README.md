@@ -1,76 +1,157 @@
 # FileArk 文件方舟
 
-本地文件智能整理与去重引擎：扫描目录 → 两阶段指纹查重 → 规则自动归档 → **事务式执行（预检 + 撤销日志 + 崩溃恢复）** → 安全区兜底。所有危险操作可预览、可撤销。
+本地文件智能整理与去重引擎：扫描目录 → 两阶段指纹查重 → 规则自动归档 → **事务式执行（预检 + 撤销日志 + 崩溃恢复）** → 安全区兜底。所有危险操作可预览、可撤销、可崩溃恢复。
 
 
-## 模块结构
+## 目录
 
+- [功能总览](#功能总览)
+- [架构](#架构)
+- [核心机制：文件系统上的事务](#核心机制文件系统上的事务)
+- [实测性能](#实测性能)
+- [快速开始](#快速开始)
+- [测试](#测试)
+- [桌面打包](#桌面打包)
+- [工程取舍记录](#工程取舍记录)
+
+## 功能总览
+
+| 模块 | 能力 |
+|---|---|
+| 扫描查重 | 两阶段指纹（size 分桶 → 头/中/尾抽样 → 虚拟线程并行全量 SHA-256）；**增量扫描**：path+size+mtime 未变直接复用历史哈希 |
+| 规则引擎 | 条件（类型/大小/时间/正则/路径）+ 动作（移动/重命名/标记），优先级首条命中；dry-run 与真实执行共用同一构建路径 |
+| 事务执行器 | 执行前预检（冲突/变更/空间/穿越）→ 变更前写撤销日志 → 失败自动逆序回滚 → 崩溃重启按日志重放 |
+| 安全区 | 删除必经隔离目录（uuid 改名防冲突），登记元数据、30 天保留期、随时恢复、二次确认彻底删除 |
+| 目录监控 | WatchService 递归监听 + 500ms 防抖 + 文件稳定性检查（下载中文件不动它）→ 新文件自动按规则整理，绑定关系重启自动恢复 |
+| 相似图片 | 手写 dHash（灰度 → 9×8 降采样 → 64-bit）+ 汉明距离 + 并查集传递闭包分组 |
+| 控制台 | 仪表盘 / 扫描查重 / 规则管理 / 执行中心 / 安全区 / 目录监控 / 设置 七个页面；扫描进度 SSE 实时推送 |
+
+## 架构
+
+```mermaid
+flowchart LR
+    subgraph UI[Vue 3 + Element Plus]
+        PAGES[七个页面]
+    end
+    subgraph WEB[Spring Boot 3.5 · fileark-web]
+        API[REST /api + SSE]
+        WM[WatchManager 监控编排]
+        RUNNER[启动恢复 Runner]
+    end
+    subgraph CORE[fileark-core · 零 Spring 依赖]
+        SCAN[扫描器 FileScanner]
+        DET[查重 DuplicateDetector]
+        RULE[规则引擎 RuleEngine]
+        PLANNER[Planner 计划构建]
+        EXEC[TransactionalExecutor 事务执行]
+        RECOV[RecoveryService 崩溃恢复]
+        WATCH[DirectoryWatcher]
+        QM[QuarantineManager 安全区]
+        DHASH[DHash 感知哈希]
+    end
+    subgraph STO[fileark-storage · SQLite]
+        MIG[版本化迁移器]
+        REPO[8 个仓储实现]
+    end
+    PAGES --> API
+    API --> SCAN & DET & RULE & PLANNER & EXEC & QM & DHASH
+    WM --> WATCH & RULE & PLANNER & EXEC
+    RUNNER --> RECOV
+    CORE -- 端口接口 port/ --> REPO
+    MIG --> REPO
 ```
-fileark/
-├── fileark-core/     # 领域逻辑：指纹、查重、规则引擎、事务执行器、安全区、dHash、扫描编排
-│                     #   （零 Spring 依赖，由 ArchUnit 在 CI 中强制约束）
-├── fileark-storage/  # SQLite 持久化 + 内置版本化迁移器（实现 core 的端口接口）
-├── fileark-web/      # Spring Boot 3.5：REST API + SSE 进度推送 + 启动恢复
-├── fileark-ui/       # Vue 3 + Element Plus 控制台（构建产物打进 web 的 jar）
-└── docs/             # 设计文档与 ADR
+
+依赖方向 `web → storage → core`；core 通过 `port/` 包的 8 个接口反转存储依赖，由 ArchUnit 在测试中强制（core 不 import Spring/jakarta，storage 不 import web）。
+
+## 核心机制：文件系统上的事务
+
+文件系统没有事务，本项目用「预检 + 撤销日志 + 状态机 + 启动重放」自实现：
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant E as TransactionalExecutor
+    participant S as PlanStore(UndoLog)
+    participant F as 文件系统
+
+    U->>E: execute(planId)
+    E->>F: 预检（冲突/源变更/空间/路径穿越）
+    E->>S: 状态 → EXECUTING
+    loop 每条操作
+        E->>S: 先写撤销日志（含目标路径/新建目录链）
+        E->>F: mkdirs + ATOMIC_MOVE（绝不覆盖）
+        E->>S: 操作 → DONE
+    end
+    E->>S: 状态 → EXECUTED
+    U->>E: rollback(planId)
+    Note over E: 逆序（LIFO）弹出 DONE 操作
+    loop 后做的先撤销
+        E->>F: 按日志逆向移动 + 回收新建空目录
+    end
+    E->>S: 状态 → ROLLED_BACK
 ```
 
-依赖方向：`web → storage → core`。core 通过 `port/` 下的接口反转对存储的依赖。
+- **执行中失败**：已成功条目自动逆序回滚，计划 → `FAILED`（终态，重试 = 新建计划）；回滚未完成 → `NEEDS_REVIEW` 人工确认。
+- **进程崩溃**：重启时 `RecoveryService` 找到 `EXECUTING` 计划，核对磁盘实况后按日志重放回滚；与磁盘矛盾的条目进 `NEEDS_REVIEW`。
+- **删除语义**：只进安全区（uuid 改名），登记 `quarantine_item`；撤销/恢复原路返回。
+
+## 实测性能
+
+Apple M 系列 · JDK 21 · `-Xmx512m` · 合成负载（3000 文件 / 299MB / 20 个子目录，其中 299 个相同内容副本）：
+
+| 指标 | 数值 |
+|---|---|
+| 首次全量扫描（遍历 + 元数据 + 抽样 + 全量确认） | **6.9 s** |
+| 计划执行：298 个文件移入安全区（含撤销日志落库） | 1.18 s |
+| 完整撤销：298 个文件全部还原 + 空目录回收 | 1.25 s |
+| 增量扫描 | 内容未变的 299 个文件全部复用历史哈希 |
+| 服务进程常驻内存（RSS） | ≈ 260 MB（512MB 堆约束内） |
+| 自动化验证 | 42 个测试全绿 + E2E 12 项断言全通过 |
+
+复现：`python3 scripts/e2e_bench.py`（需先启动后端）。
 
 ## 快速开始
 
-前置：JDK 21、Maven 3.9、Node.js ≥ 20。
+前置：JDK 21、Node.js ≥ 20。Maven Wrapper 已随仓库提供，无需安装 Maven。
 
 ```bash
-# 1. 生成 Maven Wrapper（首次，之后可用 ./mvnw）
-mvn wrapper:wrapper
-
-# 2. 构建前端（产物输出到 fileark-web/src/main/resources/static）
+# 1. 构建前端（产物输出到 fileark-web 静态资源目录）
 cd fileark-ui && npm install && npm run build && cd ..
 
-# 3. 后端测试与打包
-./mvnw verify          # 或 mvn verify
+# 2. 后端测试 + 打包
+./mvnw verify
 
-# 4. 启动（本地服务，无任何外部依赖）
-mvn -pl fileark-web spring-boot:run
+# 3. 启动（单进程本地应用，无任何外部依赖）
+java -jar fileark-web/target/fileark-web-0.1.0-SNAPSHOT.jar
 # 浏览器打开 http://localhost:8080 （API 文档: /swagger-ui.html）
+
+# 前后端分离开发：后端照常启动，前端 npm run dev（Vite 代理 /api → 8080）
 ```
 
-日常开发可前后端分离：后端照常启动，前端 `npm run dev`（Vite 代理 `/api` 到 8080）。
-
-
-1. **两阶段指纹查重**：size 分桶 → 头/中/尾 4KB 抽样哈希出「疑似组」→ 后台虚拟线程并行全量 SHA-256 确认。疑似结果秒级可见，误报在确认阶段剔除。
-2. **自实现文件事务**：文件系统不支持事务，用「执行前预检 + 变更前写撤销日志 + 计划状态机（PLANNED/EXECUTING/EXECUTED/FAILED/ROLLED_BACK/NEEDS_REVIEW）+ 启动重放」实现可撤销、可崩溃恢复的批量文件操作。
-3. **虚拟线程并发**：全量哈希等 IO 密集任务跑在 `Executors.newVirtualThreadPerTaskExecutor()` 上，`Semaphore` 限制文件句柄并发。
-4. **手写感知哈希**：dHash（灰度 → 9×8 降采样 → 相邻比较 → 64-bit）+ 汉明距离 + 并查集传递闭包分组。
-5. **架构边界**：core 零 Spring 依赖；dry-run 与真实执行共用同一计划构建路径（属性测试保证预览即所得）。
+数据与安全区默认在 `~/.fileark/`（可用 `--app.db-path` / `--app.quarantine-dir` 覆盖）。
 
 ## 测试
 
-- 单元：哈希已知向量、规则真值表、路径模板（含目录穿越拒绝）
-- 故障注入：第 k 条操作失败 → 自动逆序回滚；模拟崩溃 → 重启恢复
-- **jqwik 属性测试**：不变量 A（任意操作序列执行+撤销后目录树逐字节还原）、不变量 B（构建计划绝不触碰磁盘）
-- ArchUnit：core 不依赖 Spring/外层模块，storage 不依赖 web
-- 存储层 SQLite 往返冒烟测试
-
 ```bash
-mvn -pl fileark-core test        # 仅领域层
-mvn verify                        # 全部 + ArchUnit + 覆盖率
+./mvnw test          # 42 个测试：core 35 + storage 4 + 架构守护 3
 ```
 
-## 与设计文档的实现偏差
+- **属性测试**（jqwik，各 100 组随机用例）：不变量 A——任意「移动/重命名/移入安全区」操作序列执行后撤销，目录树逐字节还原；不变量 B——构建计划（dry-run 路径）绝不触碰磁盘。
+- **故障注入**：第 k 条操作强制失败 → 自动逆序回滚；模拟「执行一半崩溃」→ 重启按日志恢复。
+- **ArchUnit**：core 零 Spring 依赖、模块依赖方向守护。
+- **E2E**：`scripts/e2e_bench.py` 对真实运行的后端做 12 项断言（扫描 → 查重 → 计划 → 执行 → 撤销 → 增量 → 监控 → 仪表盘）。
 
-| 偏差 | 原因 |
-|---|---|
-| Flyway → 内置版本化迁移器（`SchemaMigrator` + `db/migration/index.txt`） | SQLite 属 Flyway 10+ 的社区数据库支持，官方 artifact 不稳定；内置实现约 100 行且行为可控 |
-| API 新增 `POST /api/plans`（持久化计划） | 文档原只有 dry-run 与 execute；执行需要先持久化计划以获得 id |
-| 测试未引入 Mockito | 实际未用到 mock，仓储有内存桩（`InMemoryStores`），引入未用依赖反而失真 |
-| `mvnw` 未随仓库提交 | 环境约束（本阶段不执行构建命令）；`mvn wrapper:wrapper` 一条命令即可生成 |
+## 桌面打包
 
-## 当前状态
+```bash
+scripts/package-desktop.sh   # jpackage 生成 .app/.dmg（免装 JRE）
+```
 
-- [x] M0 骨架 + M1 扫描查重 + M2 规则与事务 + M3 前端五页面（代码完成，待首次构建验证）
-- [ ] M4 目录监控（`watch/` 包设计稿在文档 §4.6，代码留待该里程碑）
-- [ ] M5 仪表盘（F8）、jpackage 桌面打包（F9）
+## 工程取舍记录
 
-> 注意：本项目在编写阶段未执行任何构建/运行命令，首次 `mvn verify` 可能需要微调依赖版本号（pom 中版本以编写时公开版本为准）。
+| 决策 | 选择 | 原因 |
+|---|---|---|
+| Schema 迁移 | 内置版本化迁移器（~100 行） | SQLite 属 Flyway 10+ 社区库支持，官方 artifact 不稳定 |
+| 进度推送 | SSE | 单向推送足够，重连语义简单 |
+| 稳定性判定 | 文件大小两次采样 | 防下载中间态误判；同大小重写不算「不稳定」是刻意边界 |
+| 父 POM | 自定义（非 spring-boot-starter-parent） | 多模块统一版本管理；因此需显式开启 `-parameters` 编译参数（踩坑记录） |

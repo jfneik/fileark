@@ -19,6 +19,9 @@
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
+        <!-- Spring Framework 6.1+ 靠反射读取参数名解析 @PathVariable/@RequestParam，
+             自定义父 POM 必须显式开启 -parameters（spring-boot-starter-parent 已默认开启） -->
+        <maven.compiler.parameters>true</maven.compiler.parameters>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-boot.version>3.5.5</spring-boot.version>
         <sqlite-jdbc.version>3.50.3.0</sqlite-jdbc.version>

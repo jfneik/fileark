@@ -112,10 +112,11 @@ public class StorageConfig {
 
     @Bean
     public TransactionalExecutor transactionalExecutor(PlanStore planStore, UndoLogStore undoLogStore,
+                                                       QuarantineStore quarantineStore,
                                                        FileOps fileOps, PreflightChecker preflight,
-                                                       AppProperties props) {
-        return new TransactionalExecutor(planStore, undoLogStore, fileOps, preflight,
-                AppProperties.expand(props.quarantineDir()));
+                                                       AppProperties props, Clock clock) {
+        return new TransactionalExecutor(planStore, undoLogStore, quarantineStore, fileOps,
+                preflight, AppProperties.expand(props.quarantineDir()), clock, props.retentionDays());
     }
 
     @Bean

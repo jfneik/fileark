@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import DashboardTab from './components/DashboardTab.vue'
 import ScanTab from './components/ScanTab.vue'
 import RulesTab from './components/RulesTab.vue'
 import PlansTab from './components/PlansTab.vue'
 import QuarantineTab from './components/QuarantineTab.vue'
+import WatchTab from './components/WatchTab.vue'
 import SettingsTab from './components/SettingsTab.vue'
 </script>
 
@@ -16,10 +18,12 @@ import SettingsTab from './components/SettingsTab.vue'
     </el-header>
     <el-main style="padding-top: 0">
       <el-tabs>
+        <el-tab-pane lazy label="仪表盘"><DashboardTab /></el-tab-pane>
         <el-tab-pane lazy label="扫描查重"><ScanTab /></el-tab-pane>
         <el-tab-pane lazy label="规则管理"><RulesTab /></el-tab-pane>
         <el-tab-pane lazy label="执行中心"><PlansTab /></el-tab-pane>
         <el-tab-pane lazy label="安全区"><QuarantineTab /></el-tab-pane>
+        <el-tab-pane lazy label="目录监控"><WatchTab /></el-tab-pane>
         <el-tab-pane lazy label="设置"><SettingsTab /></el-tab-pane>
       </el-tabs>
     </el-main>

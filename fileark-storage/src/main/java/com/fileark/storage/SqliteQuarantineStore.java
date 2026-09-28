@@ -54,15 +54,29 @@ public final class SqliteQuarantineStore implements QuarantineStore {
 
     @Override
     public Optional<QuarantineItem> find(long id) {
+        return queryOne("SELECT * FROM quarantine_item WHERE id = ?", ps -> ps.setLong(1, id));
+    }
+
+    @Override
+    public Optional<QuarantineItem> findByQuarantinePath(String quarantinePath) {
+        return queryOne("SELECT * FROM quarantine_item WHERE quarantine_path = ?",
+                ps -> ps.setString(1, quarantinePath));
+    }
+
+    private Optional<QuarantineItem> queryOne(String sql, Binder binder) {
         try (var conn = db.open();
-             var ps = conn.prepareStatement("SELECT * FROM quarantine_item WHERE id = ?")) {
-            ps.setLong(1, id);
+             var ps = conn.prepareStatement(sql)) {
+            binder.bind(ps);
             try (var rs = ps.executeQuery()) {
                 return rs.next() ? Optional.of(map(rs)) : Optional.empty();
             }
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    private interface Binder {
+        void bind(java.sql.PreparedStatement ps) throws SQLException;
     }
 
     @Override

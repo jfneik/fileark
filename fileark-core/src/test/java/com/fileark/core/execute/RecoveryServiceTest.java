@@ -34,8 +34,9 @@ class RecoveryServiceTest {
         planStore = new InMemoryStores.MemPlanStore();
         undoLogStore = new InMemoryStores.MemUndoLogStore();
         FsFileOps fs = new FsFileOps();
-        TransactionalExecutor executor = new TransactionalExecutor(planStore, undoLogStore, fs,
-                new PreflightChecker(fs), dir.resolve("quarantine"));
+        TransactionalExecutor executor = new TransactionalExecutor(planStore, undoLogStore,
+                new InMemoryStores.MemQuarantineStore(), fs, new PreflightChecker(fs),
+                dir.resolve("quarantine"), Clock.fixed(Instant.EPOCH, ZoneId.of("UTC")), 30);
         recovery = new RecoveryService(planStore, undoLogStore, fs, executor);
     }
 

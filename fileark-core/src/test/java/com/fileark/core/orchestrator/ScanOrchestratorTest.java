@@ -55,6 +55,41 @@ class ScanOrchestratorTest {
     }
 
     @Test
+    void secondScanReusesContentHashes() throws Exception {
+        byte[] payload = new byte[4096];
+        for (int i = 0; i < payload.length; i++) {
+            payload[i] = (byte) (i % 97);
+        }
+        Files.write(dir.resolve("a.bin"), payload);
+        Files.write(dir.resolve("b.bin"), payload);
+        Files.write(dir.resolve("c.bin"), new byte[]{1, 2, 3, 4});
+
+        InMemoryStores.MemScanStore scanStore = new InMemoryStores.MemScanStore();
+        InMemoryStores.MemFileRepository repo = new InMemoryStores.MemFileRepository();
+        InMemoryStores.MemDuplicateStore dupStore = new InMemoryStores.MemDuplicateStore();
+        ScanOrchestrator orchestrator = new ScanOrchestrator(scanStore, repo, dupStore,
+                new DuplicateDetector(), Executors.newVirtualThreadPerTaskExecutor(), 4);
+
+        long first = orchestrator.createScan(dir);
+        orchestrator.runScan(first, dir, ScanEventListener.NOOP);
+
+        // 复现增量扫描的前提：同 path+size+mtime 的历史条目已有全量哈希
+        var aMeta = repo.byScan(first).stream()
+                .filter(m -> m.path().getFileName().toString().equals("a.bin"))
+                .findFirst().orElseThrow();
+        assertThat(repo.findReusableContentHash(aMeta.path().toString(),
+                aMeta.size(), aMeta.mtime())).isPresent();
+
+        long second = orchestrator.createScan(dir);
+        orchestrator.runScan(second, dir, ScanEventListener.NOOP);
+
+        assertThat(scanStore.find(second).orElseThrow().status()).isEqualTo(com.fileark.core.scan.ScanStatus.DONE);
+        String stats = scanStore.find(second).orElseThrow().statsJson();
+        assertThat(stats).contains("\"reusedHashes\":2");
+        assertThat(dupStore.groupsOf(second)).hasSize(1);
+    }
+
+    @Test
     void cancelFlagEndsScanAsCancelled() throws Exception {
         Files.write(dir.resolve("x.bin"), new byte[]{9, 9, 9, 9});
         ScanStore scanStore = new InMemoryStores.MemScanStore();

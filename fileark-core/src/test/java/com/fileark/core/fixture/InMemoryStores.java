@@ -1,6 +1,5 @@
 package com.fileark.core.fixture;
 
-import com.fileark.core.dedup.DuplicateDetector;
 import com.fileark.core.execute.UndoKind;
 import com.fileark.core.execute.UndoRecord;
 import com.fileark.core.model.FileMeta;
@@ -16,6 +15,7 @@ import com.fileark.core.port.UndoLogStore;
 import com.fileark.core.rule.Rule;
 import com.fileark.core.scan.ScanStatus;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -85,6 +85,7 @@ public final class InMemoryStores {
             return scanOf.entrySet().stream()
                     .filter(e -> e.getValue() == scanId)
                     .map(e -> byId.get(e.getKey()))
+                    .sorted(java.util.Comparator.comparing(f -> f.path().toString()))
                     .collect(Collectors.toList());
         }
 
@@ -101,6 +102,15 @@ public final class InMemoryStores {
         @Override
         public void markSkipped(long id, String reason) {
             skipReasons.put(id, reason);
+        }
+
+        @Override
+        public java.util.Optional<String> findReusableContentHash(String path, long size, Instant mtime) {
+            return byId.values().stream()
+                    .filter(m -> m.path().toString().equals(path) && m.size() == size && m.mtime().equals(mtime))
+                    .map(m -> contentHashes.get(m.id()))
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst();
         }
 
         /** 测试断言用。 */
@@ -241,6 +251,57 @@ public final class InMemoryStores {
             list.replaceAll(o -> o.id() == operationId
                     ? new Operation(o.id(), o.type(), o.src(), o.dst(), o.expectedSize(),
                     o.expectedMtime(), status, error) : o);
+        }
+    }
+
+    public static class MemQuarantineStore implements com.fileark.core.port.QuarantineStore {
+        public final Map<Long, com.fileark.core.quarantine.QuarantineItem> items = new ConcurrentHashMap<>();
+        private final AtomicLong seq = new AtomicLong();
+
+        @Override
+        public long insert(com.fileark.core.quarantine.QuarantineItem item) {
+            long id = seq.incrementAndGet();
+            // 存回填 id 后的对象，保持与 SQLite 行为一致
+            com.fileark.core.quarantine.QuarantineItem stored =
+                    new com.fileark.core.quarantine.QuarantineItem(id, item.originalPath(),
+                            item.quarantinePath(), item.size(), item.hash(),
+                            item.quarantinedAt(), item.purgeAfter(), item.purged());
+            items.put(id, stored);
+            return id;
+        }
+
+        @Override
+        public List<com.fileark.core.quarantine.QuarantineItem> active() {
+            return items.values().stream()
+                    .filter(i -> !i.purged())
+                    .sorted(java.util.Comparator.comparing(
+                            com.fileark.core.quarantine.QuarantineItem::quarantinedAt).reversed())
+                    .toList();
+        }
+
+        @Override
+        public Optional<com.fileark.core.quarantine.QuarantineItem> find(long id) {
+            return Optional.ofNullable(items.get(id));
+        }
+
+        @Override
+        public Optional<com.fileark.core.quarantine.QuarantineItem> findByQuarantinePath(String path) {
+            return items.values().stream()
+                    .filter(i -> i.quarantinePath().equals(path))
+                    .findFirst();
+        }
+
+        @Override
+        public void markPurged(long id) {
+            com.fileark.core.quarantine.QuarantineItem i = items.get(id);
+            items.put(id, new com.fileark.core.quarantine.QuarantineItem(
+                    i.id(), i.originalPath(), i.quarantinePath(), i.size(), i.hash(),
+                    i.quarantinedAt(), i.purgeAfter(), true));
+        }
+
+        @Override
+        public void delete(long id) {
+            items.remove(id);
         }
     }
 

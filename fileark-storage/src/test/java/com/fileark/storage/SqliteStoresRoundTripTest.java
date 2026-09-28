@@ -102,4 +102,23 @@ class SqliteStoresRoundTripTest {
         assertThat(settings.get("k")).contains("v2");
         assertThat(settings.all()).containsEntry("k", "v2");
     }
+
+    @Test
+    void reusableHashLookupMatchesPathSizeMtime() throws Exception {
+        long scanId = scans.create("/tmp/root");
+        FileMeta stable = new FileMeta(0, Path.of("/tmp/root/stable.bin"), 500,
+                Instant.parse("2026-09-19T00:00:00Z"), null, Category.OTHER);
+        FileMeta inserted = files.insertAll(scanId, List.of(stable)).getFirst();
+        // 未算过全量哈希时不可复用
+        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 500,
+                Instant.parse("2026-09-19T00:00:00Z"))).isEmpty();
+        files.updateContentHash(inserted.id(), "abc123");
+        // path+size+mtime 全部一致才复用
+        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 500,
+                Instant.parse("2026-09-19T00:00:00Z"))).contains("abc123");
+        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 501,
+                Instant.parse("2026-09-19T00:00:00Z"))).isEmpty();
+        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 500,
+                Instant.parse("2026-09-20T00:00:00Z"))).isEmpty();
+    }
 }

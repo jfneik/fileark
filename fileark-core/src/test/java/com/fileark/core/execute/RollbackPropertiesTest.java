@@ -72,7 +72,8 @@ class RollbackPropertiesTest {
     static Arbitrary<List<MoveSpec>> moveSpecs() {
         Arbitrary<Integer> from = Arbitraries.integers().between(0, 7);
         Arbitrary<Integer> to = Arbitraries.integers().between(0, 7);
-        Arbitrary<Integer> kind = Arbitraries.integers().between(0, 1);
+        // kind: 0=同目录重命名 1=移入新目录 2=移入安全区（删除语义）
+        Arbitrary<Integer> kind = Arbitraries.integers().between(0, 2);
         return Combinators.combine(from, to, kind).as(MoveSpec::new)
                 .list().ofMaxSize(5);
     }
@@ -146,14 +147,19 @@ class RollbackPropertiesTest {
             List<Operation> ops = new ArrayList<>();
             for (MoveSpec m : moves) {
                 Path src = files.get(m.fromIdx() % files.size());
-                Path dst = m.kind() == 0
-                        ? src.resolveSibling("renamed_" + m.toIdx() + "_" + src.getFileName())
-                        : root.resolve("mv" + m.toIdx()).resolve(src.getFileName());
-                if (dst.equals(src)) {
-                    continue;
+                Operation op = switch (m.kind()) {
+                    case 0 -> Operation.pending(com.fileark.core.plan.OperationType.MOVE, src,
+                            src.resolveSibling("renamed_" + m.toIdx() + "_" + src.getFileName()),
+                            Files.size(src), Files.getLastModifiedTime(src).toInstant());
+                    case 1 -> Operation.pending(com.fileark.core.plan.OperationType.MOVE, src,
+                            root.resolve("mv" + m.toIdx()).resolve(src.getFileName()),
+                            Files.size(src), Files.getLastModifiedTime(src).toInstant());
+                    default -> Operation.pending(com.fileark.core.plan.OperationType.DELETE_TO_QUARANTINE,
+                            src, null, Files.size(src), Files.getLastModifiedTime(src).toInstant());
+                };
+                if (op.dst() == null || !op.dst().equals(src)) {
+                    ops.add(op);
                 }
-                ops.add(Operation.pending(com.fileark.core.plan.OperationType.MOVE, src, dst,
-                        Files.size(src), Files.getLastModifiedTime(src).toInstant()));
             }
             if (ops.isEmpty()) {
                 return;
@@ -163,7 +169,8 @@ class RollbackPropertiesTest {
             UndoLogStore undoLogStore = new InMemoryStores.MemUndoLogStore();
             FsFileOps fs = new FsFileOps();
             TransactionalExecutor executor = new TransactionalExecutor(planStore, undoLogStore,
-                    fs, new PreflightChecker(fs), quarantine);
+                    new InMemoryStores.MemQuarantineStore(), fs, new PreflightChecker(fs),
+                    quarantine, Clock.fixed(Instant.EPOCH, ZoneId.of("UTC")), 30);
             long planId = planStore.create(PlanStatus.PLANNED, "prop", ops);
             PlanStatus endStatus;
             try {

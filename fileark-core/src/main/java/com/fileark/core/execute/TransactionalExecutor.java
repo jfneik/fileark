@@ -29,20 +29,29 @@ public final class TransactionalExecutor {
 
     private final com.fileark.core.port.PlanStore planStore;
     private final com.fileark.core.port.UndoLogStore undoLogStore;
+    private final com.fileark.core.port.QuarantineStore quarantineStore;
     private final FileOps fileOps;
     private final PreflightChecker preflight;
     private final Path quarantineDir;
+    private final java.time.Clock clock;
+    private final long retentionDays;
 
     public TransactionalExecutor(com.fileark.core.port.PlanStore planStore,
                                  com.fileark.core.port.UndoLogStore undoLogStore,
+                                 com.fileark.core.port.QuarantineStore quarantineStore,
                                  FileOps fileOps,
                                  PreflightChecker preflight,
-                                 Path quarantineDir) {
+                                 Path quarantineDir,
+                                 java.time.Clock clock,
+                                 long retentionDays) {
         this.planStore = planStore;
         this.undoLogStore = undoLogStore;
+        this.quarantineStore = quarantineStore;
         this.fileOps = fileOps;
         this.preflight = preflight;
         this.quarantineDir = quarantineDir;
+        this.clock = clock;
+        this.retentionDays = retentionDays;
     }
 
     public Plan execute(long planId) {
@@ -108,8 +117,9 @@ public final class TransactionalExecutor {
         }
         Deque<Operation> done = new ArrayDeque<>();
         List<Operation> ops = planStore.operationsOf(planId);
-        for (int i = ops.size() - 1; i >= 0; i--) {
-            Operation op = ops.get(i);
+        // 正序遍历 + 头插 = 弹出时逆序（LIFO）：后做的操作先撤销，
+        // 否则先撤销的条目回收目录时会遇到后做条目的文件，空目录清理被中断
+        for (Operation op : ops) {
             if (op.status() == OperationStatus.DONE) {
                 done.push(op);
             }
@@ -214,6 +224,13 @@ public final class TransactionalExecutor {
             case DELETE_TO_QUARANTINE -> {
                 fileOps.mkdirs(quarantineDir);
                 fileOps.move(op.src(), quarantineTarget);
+                // 安全区登记：让隔离文件出现在安全区列表，可恢复、到期可清除
+                quarantineStore.insert(new com.fileark.core.quarantine.QuarantineItem(
+                        0, op.src().toString(), quarantineTarget.toString(),
+                        op.expectedSize(), null,
+                        java.time.Instant.now(clock),
+                        java.time.Instant.now(clock).plus(java.time.Duration.ofDays(retentionDays)),
+                        false));
             }
         }
     }
@@ -245,6 +262,8 @@ public final class TransactionalExecutor {
                 if (fileOps.exists(Path.of(p.quarantinePath()))) {
                     fileOps.mkdirs(Path.of(p.src()).getParent());
                     fileOps.move(Path.of(p.quarantinePath()), Path.of(p.src()));
+                    quarantineStore.findByQuarantinePath(p.quarantinePath())
+                            .ifPresent(i -> quarantineStore.delete(i.id()));
                 }
             }
         }

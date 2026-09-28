@@ -93,3 +93,21 @@ export interface CreatePlanRequest {
   keepStrategy?: 'NEWEST' | 'OLDEST' | 'FIRST_PATH'
   targetDir?: string
 }
+
+export interface Dashboard {
+  totalScans: number
+  latestScan: { id: number; rootPath: string } | null
+  indexedFiles: number
+  indexedBytes: number
+  categories: Record<string, number>
+  duplicateGroups: number
+  reclaimableBytes: number
+  plans: Record<string, number>
+  quarantine: { items: number; bytes: number; expired: number }
+}
+
+export interface WatchStatus {
+  dir: string
+  active: boolean
+}
+

@@ -3,7 +3,6 @@ package com.fileark.core.orchestrator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fileark.core.dedup.DuplicateDetector;
 import com.fileark.core.exception.FileArkException;
-import com.fileark.core.model.FileClassify;
 import com.fileark.core.model.FileMeta;
 import com.fileark.core.port.DuplicateStore;
 import com.fileark.core.port.FileRepository;
@@ -13,9 +12,7 @@ import com.fileark.core.scan.ScanListener;
 import com.fileark.core.scan.ScanStatus;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -73,10 +70,13 @@ public final class ScanOrchestrator {
 
             List<FileMeta> metas = new ArrayList<>(paths.size());
             for (Path p : paths) {
-                BasicFileAttributes attrs = Files.readAttributes(p, BasicFileAttributes.class);
-                FileClassify.Detected detected = FileClassify.detect(p);
-                metas.add(new FileMeta(0, p, attrs.size(), attrs.lastModifiedTime().toInstant(),
-                        detected.mimeType(), detected.category()));
+                metas.add(FileMeta.of(p));
+            }
+            // 增量扫描（F10）：path+size+mtime 未变的文件直接复用历史全量哈希
+            Map<String, String> knownHashes = new LinkedHashMap<>();
+            for (FileMeta m : metas) {
+                fileRepository.findReusableContentHash(m.path().toString(), m.size(), m.mtime())
+                        .ifPresent(h -> knownHashes.put(m.path().toString(), h));
             }
             metas = fileRepository.insertAll(scanId, metas);
 
@@ -102,17 +102,18 @@ public final class ScanOrchestrator {
             }
 
             listener.onPhase("CONFIRMING");
+            java.util.concurrent.atomic.AtomicLong reused = new java.util.concurrent.atomic.AtomicLong();
             long reclaimable = 0;
             int confirmedGroups = 0;
             for (int i = 0; i < suspected.size(); i++) {
                 if (listener.cancelled()) {
                     suspectedIds.forEach(id -> duplicateStore.updateStatus(id,
                             DuplicateStore.GroupStatus.SUSPECTED));
-                    scanStore.updateStatus(scanId, ScanStatus.CANCELLED, stats(metas.size(), 0, 0));
+                    scanStore.updateStatus(scanId, ScanStatus.CANCELLED, stats(metas.size(), 0, 0, 0));
                     return;
                 }
                 List<DuplicateDetector.ConfirmedGroup> confirmed =
-                        confirmInParallel(suspected.get(i));
+                        confirmInParallel(suspected.get(i), knownHashes, reused);
                 for (DuplicateDetector.ConfirmedGroup cg : confirmed) {
                     duplicateStore.createGroup(scanId, cg.contentHash(),
                             DuplicateStore.GroupStatus.CONFIRMED, ids(cg.members()));
@@ -125,7 +126,7 @@ public final class ScanOrchestrator {
             }
 
             scanStore.updateStatus(scanId, ScanStatus.DONE,
-                    stats(metas.size(), confirmedGroups, reclaimable));
+                    stats(metas.size(), confirmedGroups, reclaimable, reused.get()));
             listener.onPhase("DONE");
         } catch (FileArkException e) {
             if (e.code() == com.fileark.core.exception.ErrorCode.SCAN_CANCELLED) {
@@ -136,11 +137,6 @@ public final class ScanOrchestrator {
                 listener.onPhase("FAILED");
                 throw e;
             }
-        } catch (IOException e) {
-            scanStore.updateStatus(scanId, ScanStatus.FAILED, errorStats(e));
-            listener.onPhase("FAILED");
-            throw new FileArkException(com.fileark.core.exception.ErrorCode.IO_ERROR,
-                    "扫描失败: " + e.getMessage(), e.toString());
         } catch (RuntimeException e) {
             scanStore.updateStatus(scanId, ScanStatus.FAILED, errorStats(e));
             listener.onPhase("FAILED");
@@ -148,13 +144,19 @@ public final class ScanOrchestrator {
         }
     }
 
-    /** 组内成员并行全量哈希；信号量限制并发文件句柄数。 */
+    /** 组内成员并行全量哈希；信号量限制并发文件句柄数；已知哈希直接复用。 */
     private List<DuplicateDetector.ConfirmedGroup> confirmInParallel(
-            DuplicateDetector.SuspectedGroup group) {
+            DuplicateDetector.SuspectedGroup group, Map<String, String> knownHashes,
+            java.util.concurrent.atomic.AtomicLong reused) {
         Semaphore permits = new Semaphore(hashConcurrency);
         List<Future<String>> futures = new ArrayList<>();
         for (FileMeta m : group.members()) {
             futures.add(hashPool.submit(() -> {
+                String known = knownHashes.get(m.path().toString());
+                if (known != null) {
+                    reused.incrementAndGet();
+                    return known;
+                }
                 permits.acquire();
                 try {
                     return com.fileark.core.hash.FileHasher.fullSha256(m.path());
@@ -183,10 +185,11 @@ public final class ScanOrchestrator {
         return members.stream().map(FileMeta::id).toList();
     }
 
-    private static String stats(long files, long groups, long reclaimable) {
+    private static String stats(long files, long groups, long reclaimable, long reusedHashes) {
         try {
             return JSON.writeValueAsString(Map.of(
-                    "files", files, "confirmedGroups", groups, "reclaimableBytes", reclaimable));
+                    "files", files, "confirmedGroups", groups,
+                    "reclaimableBytes", reclaimable, "reusedHashes", reusedHashes));
         } catch (IOException e) {
             return null;
         }

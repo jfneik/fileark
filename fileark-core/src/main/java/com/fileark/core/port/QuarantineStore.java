@@ -14,6 +14,9 @@ public interface QuarantineStore {
 
     Optional<QuarantineItem> find(long id);
 
+    /** 按隔离区路径定位条目（撤销日志回滚时用）。 */
+    Optional<QuarantineItem> findByQuarantinePath(String quarantinePath);
+
     void markPurged(long id);
 
     void delete(long id);

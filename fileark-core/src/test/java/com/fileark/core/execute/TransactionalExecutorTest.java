@@ -33,6 +33,7 @@ class TransactionalExecutorTest {
     Path quarantineDir;
     PlanStore planStore;
     UndoLogStore undoLogStore;
+    InMemoryStores.MemQuarantineStore quarantineStore;
     TransactionalExecutor executor;
     private static final Clock CLOCK = Clock.fixed(Instant.EPOCH, ZoneId.of("UTC"));
 
@@ -41,9 +42,10 @@ class TransactionalExecutorTest {
         quarantineDir = dir.resolve("quarantine");
         planStore = new InMemoryStores.MemPlanStore();
         undoLogStore = new InMemoryStores.MemUndoLogStore();
+        quarantineStore = new InMemoryStores.MemQuarantineStore();
         FsFileOps fs = new FsFileOps();
-        executor = new TransactionalExecutor(planStore, undoLogStore, fs,
-                new PreflightChecker(fs), quarantineDir);
+        executor = new TransactionalExecutor(planStore, undoLogStore, quarantineStore, fs,
+                new PreflightChecker(fs), quarantineDir, CLOCK, 30);
     }
 
     private Operation moveOp(Path src, Path dst) throws IOException {
@@ -116,7 +118,8 @@ class TransactionalExecutorTest {
             }
         };
         TransactionalExecutor failingExecutor = new TransactionalExecutor(
-                planStore, undoLogStore, faulty, new PreflightChecker(faulty), quarantineDir);
+                planStore, undoLogStore, quarantineStore, faulty, new PreflightChecker(faulty),
+                quarantineDir, CLOCK, 30);
 
         long planId = planStore.create(PlanStatus.PLANNED, "故障演练", List.of(op1, op2));
         assertThatThrownBy(() -> failingExecutor.execute(planId))
@@ -181,12 +184,14 @@ class TransactionalExecutorTest {
         Plan plan = executor.execute(planId);
         assertThat(plan.status()).isEqualTo(PlanStatus.EXECUTED);
         assertThat(Files.exists(a)).isFalse();
+        assertThat(quarantineStore.active()).as("安全区登记条目").hasSize(1);
         try (Stream<Path> q = Files.list(quarantineDir)) {
             assertThat(q).hasSize(1);
         }
 
         executor.rollback(planId);
         assertThat(Files.exists(a)).isTrue();
+        assertThat(quarantineStore.active()).as("撤销后安全区条目应清除").isEmpty();
         try (Stream<Path> q = Files.list(quarantineDir)) {
             assertThat(q).isEmpty();
         }

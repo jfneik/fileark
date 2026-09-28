@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type {
-  CreatePlanRequest, DuplicateGroup, Plan, PlanRow, QuarantineItem, Rule, ScanRow
+  CreatePlanRequest, Dashboard, DuplicateGroup, Plan, PlanRow, QuarantineItem, Rule, ScanRow, WatchStatus
 } from './types'
 
 const http = axios.create({ baseURL: '/api' })
@@ -39,5 +39,11 @@ export const api = {
   restore: (id: number) => http.post(`/quarantine/${id}/restore`),
   purge: (id: number) => http.delete(`/quarantine/${id}`, { params: { confirm: true } }),
   settings: () => http.get<Record<string, string>>('/settings'),
-  saveSettings: (kv: Record<string, string>) => http.put<Record<string, string>>('/settings', kv)
+  saveSettings: (kv: Record<string, string>) => http.put<Record<string, string>>('/settings', kv),
+
+  // 仪表盘与目录监控
+  dashboard: () => http.get<Dashboard>('/dashboard'),
+  watchStatus: () => http.get<{ active: WatchStatus[]; rulesEnabled: boolean }>('/watch'),
+  startWatch: (dir: string) => http.post('/watch', { dir }),
+  stopWatch: (dir: string) => http.delete('/watch', { params: { dir } })
 }
