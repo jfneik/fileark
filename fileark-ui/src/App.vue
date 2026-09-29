@@ -31,5 +31,13 @@ import SettingsTab from './components/SettingsTab.vue'
 </template>
 
 <style>
-body { font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif; margin: 0; }
+/* 显式声明浅色底：系统深色模式下浏览器画布是黑的，
+   不设背景会导致 Element Plus 浅色组件浮在黑底上、深色文字不可读 */
+html, body {
+  background: #f2f3f5;
+  color: #303133;
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  margin: 0;
+}
+.el-header { background: #f2f3f5; }
 </style>
