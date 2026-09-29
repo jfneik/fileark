@@ -105,6 +105,11 @@ public final class InMemoryStores {
         }
 
         @Override
+        public java.util.Optional<FileMeta> findById(long id) {
+            return java.util.Optional.ofNullable(byId.get(id));
+        }
+
+        @Override
         public java.util.Optional<String> findReusableContentHash(String path, long size, Instant mtime) {
             return byId.values().stream()
                     .filter(m -> m.path().toString().equals(path) && m.size() == size && m.mtime().equals(mtime))

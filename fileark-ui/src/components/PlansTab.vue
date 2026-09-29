@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errText } from '../api'
+import { fmtTime } from '../utils'
 import type { Plan, PlanRow } from '../types'
 
 const plans = ref<PlanRow[]>([])
@@ -12,7 +13,8 @@ const statusType = (s: string) =>
   s === 'EXECUTED' ? 'success'
     : s === 'FAILED' || s === 'NEEDS_REVIEW' ? 'danger'
       : s === 'ROLLED_BACK' ? 'warning'
-        : s === 'EXECUTING' ? 'primary' : 'info'
+        : s === 'ACKNOWLEDGED' ? 'info'
+          : s === 'EXECUTING' ? 'primary' : 'info'
 
 async function refresh() {
   plans.value = (await api.plans()).data
@@ -45,6 +47,20 @@ async function rollback(row: PlanRow) {
   await refresh()
 }
 
+/** NEEDS_REVIEW 的人工闭环：核对完矛盾条目后标记，转终态 ACKNOWLEDGED。 */
+async function ackReview(row: PlanRow) {
+  await ElMessageBox.confirm(
+    '标记「已人工复核」表示你已核对详情中的矛盾条目并妥善处理，此后该计划不再提醒。确认？',
+    '标记已复核', { type: 'warning' })
+  try {
+    await api.ackReview(row.id)
+    ElMessage.success(`计划 #${row.id} 已标记复核完成`)
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
+  await refresh()
+}
+
 refresh()
 </script>
 
@@ -59,9 +75,11 @@ refresh()
           <el-tag :type="statusType(row.status)">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="180" show-overflow-tooltip />
+      <el-table-column label="创建时间" width="150">
+        <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
+      </el-table-column>
       <el-table-column prop="error" label="错误" show-overflow-tooltip />
-      <el-table-column label="操作" width="230">
+      <el-table-column label="操作" width="280">
         <template #default="{ row }">
           <el-button size="small" @click="openDetail(row)">详情</el-button>
           <el-button v-if="row.status === 'PLANNED'" size="small" type="primary" @click="execute(row)">
@@ -70,12 +88,15 @@ refresh()
           <el-button v-if="row.status === 'EXECUTED'" size="small" type="warning" @click="rollback(row)">
             撤销
           </el-button>
+          <el-button v-if="row.status === 'NEEDS_REVIEW'" size="small" type="danger" @click="ackReview(row)">
+            标记已复核
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-alert v-if="plans.some(p => p.status === 'NEEDS_REVIEW')"
-              title="存在 NEEDS_REVIEW 计划：崩溃恢复时发现与磁盘状态矛盾的条目，请打开详情人工核对"
+              title="存在 NEEDS_REVIEW 计划：崩溃恢复时发现与磁盘状态矛盾的条目，请打开详情人工核对，处理后点「标记已复核」闭环"
               type="error" :closable="false" style="margin-top: 12px" />
 
     <el-dialog v-model="detailVisible" :title="`计划 #${detail?.id}`" width="820px">

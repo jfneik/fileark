@@ -47,9 +47,21 @@ public class ScanController {
 
     @PostMapping
     public Map<String, Object> create(@RequestBody CreateScanRequest request) {
-        Path root = Path.of(request.rootPath());
+        // 支持 "~/Downloads" 这类写法：服务端展开 ~，前端快捷目录按钮才能工作
+        Path root = com.fileark.web.config.AppProperties.expand(request.rootPath())
+                .toAbsolutePath().normalize();
+        // 防呆：磁盘根目录与整个用户主目录不属于合理的扫描范围
+        if (root.getParent() == null) {
+            throw new FileArkException(ErrorCode.INVALID_PATH,
+                    "不能扫描磁盘根目录，请选择具体的工作目录");
+        }
+        String home = System.getProperty("user.home");
+        if (root.toString().equals(home)) {
+            throw new FileArkException(ErrorCode.INVALID_PATH,
+                    "不要扫描整个用户主目录（范围过大且包含系统数据），请选择其中的子目录，如 ~/Downloads");
+        }
         if (!Files.isDirectory(root)) {
-            throw new FileArkException(ErrorCode.INVALID_PATH, "根目录不存在或不是目录: " + request.rootPath());
+            throw new FileArkException(ErrorCode.INVALID_PATH, "根目录不存在或不是目录: " + root);
         }
         long scanId = orchestrator.createScan(root);
         scanRunner.submit(scanId, root);

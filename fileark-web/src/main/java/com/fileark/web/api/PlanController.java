@@ -4,6 +4,7 @@ import com.fileark.core.dedup.KeepStrategy;
 import com.fileark.core.exception.ErrorCode;
 import com.fileark.core.exception.FileArkException;
 import com.fileark.core.model.FileMeta;
+import com.fileark.core.plan.Operation;
 import com.fileark.core.plan.Plan;
 import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.port.DuplicateStore;
@@ -88,6 +89,19 @@ public class PlanController {
         return Dto.PlanDto.of(executor.rollback(id));
     }
 
+    /** NEEDS_REVIEW 的人工闭环：用户核对完矛盾条目后标记，状态转终态 ACKNOWLEDGED。 */
+    @PostMapping("/{id}/ack-review")
+    public Dto.PlanDto ackReview(@PathVariable long id) {
+        PlanStore.PlanRow row = planStore.findPlan(id).orElseThrow(
+                () -> new FileArkException(ErrorCode.INVALID_REQUEST, "计划不存在: " + id));
+        if (row.status() != PlanStatus.NEEDS_REVIEW) {
+            throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE,
+                    "仅 NEEDS_REVIEW 状态可标记复核，当前状态: " + row.status());
+        }
+        planStore.updatePlanStatus(id, PlanStatus.ACKNOWLEDGED, "已人工复核");
+        return get(id);
+    }
+
     private Plan buildDraft(Dto.CreatePlanRequest request) {
         if (request.refId() == null) {
             throw new FileArkException(ErrorCode.INVALID_REQUEST, "缺少 refId");
@@ -101,6 +115,26 @@ public class PlanController {
                                 group.hash(), group.members()),
                         request.keepStrategyOr(KeepStrategy.NEWEST),
                         "清理重复组 #" + request.refId() + "（保留 " + request.keepStrategyOr(KeepStrategy.NEWEST) + "）");
+            }
+            // 一键清理：本次扫描全部确认重复组合并为一个计划，一次预检一次执行，可整体撤销
+            case "DUPLICATE_CLEANUP_ALL" -> {
+                List<DuplicateStore.GroupView> groups = duplicateStore.groupsOf(request.refId()).stream()
+                        .filter(g -> g.status() == DuplicateStore.GroupStatus.CONFIRMED)
+                        .toList();
+                if (groups.isEmpty()) {
+                    throw new FileArkException(ErrorCode.INVALID_REQUEST,
+                            "扫描 #" + request.refId() + " 没有可清理的确认重复组");
+                }
+                KeepStrategy strategy = request.keepStrategyOr(KeepStrategy.NEWEST);
+                List<Operation> ops = new java.util.ArrayList<>();
+                for (DuplicateStore.GroupView g : groups) {
+                    ops.addAll(planner.fromDuplicateGroup(
+                            new com.fileark.core.dedup.DuplicateDetector.ConfirmedGroup(g.hash(), g.members()),
+                            strategy, "group#" + g.id()).operations());
+                }
+                yield new com.fileark.core.plan.Plan(0, PlanStatus.PLANNED,
+                        "一键清理扫描 #" + request.refId() + " 的 " + groups.size()
+                                + " 个重复组（保留 " + strategy + "）", null, ops);
             }
             case "RULE_APPLY" -> {
                 if (request.targetDir() == null || request.targetDir().isBlank()) {

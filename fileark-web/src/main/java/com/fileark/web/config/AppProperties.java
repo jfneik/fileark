@@ -8,7 +8,8 @@ public record AppProperties(
         String dbPath,
         String quarantineDir,
         long retentionDays,
-        int hashConcurrency
+        int hashConcurrency,
+        Boolean autoOpenBrowser
 ) {
     public AppProperties {
         if (dbPath == null || dbPath.isBlank()) {
@@ -22,6 +23,9 @@ public record AppProperties(
         }
         if (hashConcurrency <= 0) {
             hashConcurrency = 64;
+        }
+        if (autoOpenBrowser == null) {
+            autoOpenBrowser = true;
         }
     }
 

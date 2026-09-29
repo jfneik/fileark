@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public final class SqliteFileRepository implements FileRepository {
 
@@ -56,6 +57,19 @@ public final class SqliteFileRepository implements FileRepository {
                 throw e;
             } finally {
                 conn.setAutoCommit(oldAutoCommit);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Override
+    public Optional<FileMeta> findById(long id) {
+        try (var conn = db.open();
+             var ps = conn.prepareStatement("SELECT * FROM file_entry WHERE id = ?")) {
+            ps.setLong(1, id);
+            try (var rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(map(rs)) : Optional.empty();
             }
         } catch (SQLException e) {
             throw new IllegalStateException(e);

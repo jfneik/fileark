@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DashboardTab from './components/DashboardTab.vue'
 import ScanTab from './components/ScanTab.vue'
+import SimilarTab from './components/SimilarTab.vue'
 import RulesTab from './components/RulesTab.vue'
 import PlansTab from './components/PlansTab.vue'
 import QuarantineTab from './components/QuarantineTab.vue'
@@ -20,6 +21,7 @@ import SettingsTab from './components/SettingsTab.vue'
       <el-tabs>
         <el-tab-pane lazy label="仪表盘"><DashboardTab /></el-tab-pane>
         <el-tab-pane lazy label="扫描查重"><ScanTab /></el-tab-pane>
+        <el-tab-pane lazy label="相似图片"><SimilarTab /></el-tab-pane>
         <el-tab-pane lazy label="规则管理"><RulesTab /></el-tab-pane>
         <el-tab-pane lazy label="执行中心"><PlansTab /></el-tab-pane>
         <el-tab-pane lazy label="安全区"><QuarantineTab /></el-tab-pane>

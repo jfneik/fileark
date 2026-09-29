@@ -13,6 +13,9 @@ public interface FileRepository {
 
     List<FileMeta> byScan(long scanId);
 
+    /** 按 id 取单条档案（缩略图等按文件寻址的功能用）。 */
+    Optional<FileMeta> findById(long id);
+
     void updateSampleHash(long id, String sampleKey);
 
     void updateContentHash(long id, String sha256);

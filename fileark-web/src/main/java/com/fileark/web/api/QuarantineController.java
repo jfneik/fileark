@@ -43,6 +43,23 @@ public class QuarantineController {
         return Map.of("id", id, "restored", true);
     }
 
+    /** 一键清除全部已到期条目（UI 二次确认后调用）。 */
+    @PostMapping("/purge-expired")
+    public Map<String, Object> purgeExpired(@RequestParam(defaultValue = "false") boolean confirm) {
+        if (!confirm) {
+            throw new FileArkException(ErrorCode.INVALID_REQUEST, "彻底删除需要 confirm=true");
+        }
+        int purged = 0;
+        for (QuarantineItem item : store.active()) {
+            if (manager.expired(item)) {
+                manager.purgePhysically(item);
+                store.markPurged(item.id());
+                purged++;
+            }
+        }
+        return Map.of("purged", purged);
+    }
+
     /** 彻底删除隔离文件（UI 需二次确认）。 */
     @DeleteMapping("/{id}")
     public Map<String, Object> purge(@PathVariable long id,

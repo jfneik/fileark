@@ -104,6 +104,18 @@ class SqliteStoresRoundTripTest {
     }
 
     @Test
+    void findByIdRoundTrip() throws Exception {
+        long scanId = scans.create("/tmp/root");
+        FileMeta meta = new FileMeta(0, Path.of("/tmp/root/img.png"), 42,
+                Instant.parse("2026-09-19T00:00:00Z"), "image/png", Category.IMAGE);
+        FileMeta inserted = files.insertAll(scanId, List.of(meta)).getFirst();
+        assertThat(files.findById(inserted.id())).isPresent();
+        assertThat(files.findById(inserted.id()).orElseThrow().path())
+                .isEqualTo(Path.of("/tmp/root/img.png"));
+        assertThat(files.findById(999_999)).isEmpty();
+    }
+
+    @Test
     void reusableHashLookupMatchesPathSizeMtime() throws Exception {
         long scanId = scans.create("/tmp/root");
         FileMeta stable = new FileMeta(0, Path.of("/tmp/root/stable.bin"), 500,

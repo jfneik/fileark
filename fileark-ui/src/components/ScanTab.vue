@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errText } from '../api'
+import { fmtSize, fmtTime } from '../utils'
 import type { DuplicateGroup, Plan, ScanRow } from '../types'
 
 const rootPath = ref('')
@@ -13,6 +14,7 @@ const keepChoice = ref<Record<number, number>>({}) // groupId -> 保留的 fileE
 const preview = ref<Plan | null>(null)
 const previewGroupId = ref<number>()
 const previewVisible = ref(false)
+const quickDirs = ['~/Downloads', '~/Desktop', '~/Documents']
 
 async function refreshScans() {
   scans.value = (await api.listScans()).data
@@ -26,7 +28,16 @@ function startScan() {
     ElMessage.warning('请输入要扫描的目录')
     return
   }
-  api.createScan(rootPath.value).then(({ data }) => {
+  launchScan(rootPath.value)
+}
+
+function rescan(row: ScanRow) {
+  rootPath.value = row.rootPath
+  launchScan(row.rootPath)
+}
+
+function launchScan(dir: string) {
+  api.createScan(dir).then(({ data }) => {
     ElMessage.success(`扫描 #${data.scanId} 已启动`)
     const es = new EventSource(`/api/scans/${data.scanId}/events`)
     es.addEventListener('progress', e => {
@@ -38,7 +49,7 @@ function startScan() {
     es.addEventListener('phase', e => {
       if (e.data === 'DONE' || e.data === 'CANCELLED' || e.data === 'FAILED') {
         es.close()
-        progress.value = e.data === 'DONE' ? '扫描完成' : `扫描${e.data === 'DONE' ? '完成' : '结束: ' + e.data}`
+        progress.value = e.data === 'DONE' ? '扫描完成' : `扫描结束: ${e.data}`
         refreshScans()
       }
     })
@@ -56,6 +67,32 @@ async function selectScan(id: number) {
     if (newest) defaults[g.id] = newest.id
   }
   keepChoice.value = defaults
+}
+
+/** 一键清理：本次扫描全部确认重复组合并为一个计划，一次执行、可整体撤销。 */
+async function cleanAll() {
+  if (!selectedScanId.value || groups.value.length === 0) {
+    ElMessage.info('当前扫描没有可清理的确认重复组')
+    return
+  }
+  const total = groups.value.reduce((n, g) => n + g.members.length - 1, 0)
+  try {
+    await ElMessageBox.confirm(
+      `将为 ${groups.value.length} 个重复组生成一个清理计划：保留每组最新副本，其余 ${total} 个文件移入安全区（可整体撤销）。确认？`,
+      '一键清理全部重复组', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    const { data: plan } = await api.createPlan({
+      kind: 'DUPLICATE_CLEANUP_ALL', refId: selectedScanId.value, keepStrategy: 'NEWEST'
+    })
+    const { data: executed } = await api.execute(plan.id)
+    ElMessage.success(`已清理 ${total} 个重复副本（计划 #${executed.id}），可到执行中心撤销`)
+    await selectScan(selectedScanId.value)
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function previewGroup(g: DuplicateGroup) {
@@ -103,13 +140,6 @@ async function confirmCreateAndExecute(g: DuplicateGroup) {
   }
 }
 
-function fmtSize(bytes: number): string {
-  if (bytes > 1 << 30) return (bytes / (1 << 30)).toFixed(2) + ' GB'
-  if (bytes > 1 << 20) return (bytes / (1 << 20)).toFixed(2) + ' MB'
-  if (bytes > 1 << 10) return (bytes / (1 << 10)).toFixed(1) + ' KB'
-  return bytes + ' B'
-}
-
 refreshScans()
 </script>
 
@@ -117,11 +147,17 @@ refreshScans()
   <div>
     <el-form inline>
       <el-form-item label="扫描目录">
-        <el-input v-model="rootPath" placeholder="/Users/you/Downloads" style="width: 360px" />
+        <el-input v-model="rootPath" placeholder="/Users/you/Downloads 或 ~/Downloads" style="width: 340px"
+                  @keyup.enter="startScan" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="startScan">开始扫描</el-button>
         <el-button @click="refreshScans">刷新</el-button>
+      </el-form-item>
+      <el-form-item>
+        <el-button v-for="d in quickDirs" :key="d" size="small" @click="rootPath = d; startScan()">
+          {{ d.split('/').pop() }}
+        </el-button>
       </el-form-item>
     </el-form>
     <el-alert v-if="progress" :title="progress" type="info" :closable="false" style="margin-bottom: 12px" />
@@ -145,9 +181,19 @@ refreshScans()
           </span>
         </template>
       </el-table-column>
+      <el-table-column label="操作" width="110">
+        <template #default="{ row }">
+          <el-button size="small" text type="primary" @click="rescan(row)">重新扫描</el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
-    <h4>重复文件组（CONFIRMED，扫描 #{{ selectedScanId ?? '—' }}）</h4>
+    <div class="group-head">
+      <h4>重复文件组（CONFIRMED，扫描 #{{ selectedScanId ?? '—' }}）</h4>
+      <el-button v-if="groups.length > 1" type="danger" size="small" @click="cleanAll">
+        一键清理全部（{{ groups.reduce((n, g) => n + g.members.length - 1, 0) }} 个副本）
+      </el-button>
+    </div>
     <el-empty v-if="groups.length === 0" description="暂无确认的重复组" />
     <div v-for="g in groups" :key="g.id" class="group-card">
       <div class="group-head">
@@ -159,7 +205,7 @@ refreshScans()
       </div>
       <el-radio-group v-model="keepChoice[g.id]">
         <div v-for="m in g.members" :key="m.id" class="member-row">
-          <el-radio :value="m.id">{{ m.path }}（{{ fmtSize(m.size) }}，{{ m.mtime }}）</el-radio>
+          <el-radio :value="m.id">{{ m.path }}（{{ fmtSize(m.size) }}，{{ fmtTime(m.mtime) }}）</el-radio>
         </div>
       </el-radio-group>
     </div>
@@ -184,5 +230,6 @@ refreshScans()
 <style scoped>
 .group-card { border: 1px solid var(--el-border-color-light); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
 .group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.group-head h4 { margin: 0; }
 .member-row { display: block; }
 </style>

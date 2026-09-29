@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errText } from '../api'
+import { fmtSize, fmtTime } from '../utils'
 import type { QuarantineItem } from '../types'
 
 const items = ref<QuarantineItem[]>([])
@@ -10,11 +11,7 @@ function daysLeft(item: QuarantineItem): number {
   return Math.max(0, Math.ceil((new Date(item.purgeAfter).getTime() - Date.now()) / 86400000))
 }
 
-function fmtSize(bytes: number): string {
-  if (bytes > 1 << 20) return (bytes / (1 << 20)).toFixed(2) + ' MB'
-  if (bytes > 1 << 10) return (bytes / (1 << 10)).toFixed(1) + ' KB'
-  return bytes + ' B'
-}
+const expiredCount = computed(() => items.value.filter(i => daysLeft(i) <= 0).length)
 
 async function refresh() {
   items.value = (await api.quarantine()).data
@@ -43,12 +40,29 @@ async function purge(item: QuarantineItem) {
   await refresh()
 }
 
+/** 一键清除全部已到期条目（保留期 30 天，到期文件占着空间没有恢复价值时清理）。 */
+async function purgeExpired() {
+  await ElMessageBox.confirm(
+    `将物理删除全部 ${expiredCount.value} 个已到期文件，不可恢复。确认？`,
+    '清除已到期', { type: 'error' })
+  try {
+    const { data } = await api.purgeExpired()
+    ElMessage.success(`已清除 ${data.purged} 个到期文件`)
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
+  await refresh()
+}
+
 refresh()
 </script>
 
 <template>
   <div>
     <el-button type="primary" @click="refresh">刷新</el-button>
+    <el-button v-if="expiredCount > 0" type="danger" @click="purgeExpired">
+      清除已到期（{{ expiredCount }}）
+    </el-button>
     <el-table :data="items" style="margin-top: 12px" size="small">
       <el-table-column prop="originalPath" label="原始路径" show-overflow-tooltip />
       <el-table-column label="大小" width="110">
@@ -59,7 +73,9 @@ refresh()
           <el-tag :type="daysLeft(row) <= 3 ? 'danger' : 'info'">{{ daysLeft(row) }} 天</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="quarantinedAt" label="入区时间" width="180" show-overflow-tooltip />
+      <el-table-column label="入区时间" width="150">
+        <template #default="{ row }">{{ fmtTime(row.quarantinedAt) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="170">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="restore(row)">恢复</el-button>

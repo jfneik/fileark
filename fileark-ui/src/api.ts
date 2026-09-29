@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type {
-  CreatePlanRequest, Dashboard, DuplicateGroup, Plan, PlanRow, QuarantineItem, Rule, ScanRow, WatchStatus
+  CreatePlanRequest, Dashboard, DuplicateGroup, FileEntry, Plan, PlanRow, QuarantineItem, Rule, ScanRow, WatchStatus
 } from './types'
 
 const http = axios.create({ baseURL: '/api' })
@@ -33,13 +33,20 @@ export const api = {
   plan: (id: number) => http.get<Plan>(`/plans/${id}`),
   execute: (id: number) => http.post<Plan>(`/plans/${id}/execute`),
   rollback: (id: number) => http.post<Plan>(`/plans/${id}/rollback`),
+  ackReview: (id: number) => http.post<Plan>(`/plans/${id}/ack-review`),
 
   // 安全区与设置
   quarantine: () => http.get<QuarantineItem[]>('/quarantine'),
   restore: (id: number) => http.post(`/quarantine/${id}/restore`),
   purge: (id: number) => http.delete(`/quarantine/${id}`, { params: { confirm: true } }),
+  purgeExpired: () => http.post('/quarantine/purge-expired', null, { params: { confirm: true } }),
   settings: () => http.get<Record<string, string>>('/settings'),
   saveSettings: (kv: Record<string, string>) => http.put<Record<string, string>>('/settings', kv),
+
+  // 相似图片与缩略图
+  similar: (scanId: number, threshold: number) =>
+    http.get<FileEntry[][]>(`/scans/${scanId}/similar`, { params: { threshold } }),
+  thumbnailUrl: (fileId: number) => `/api/files/${fileId}/thumbnail`,
 
   // 仪表盘与目录监控
   dashboard: () => http.get<Dashboard>('/dashboard'),

@@ -15,6 +15,8 @@ app:
   retention-days: 30
   # 全量哈希阶段同时打开的文件句柄上限（虚拟线程 + 信号量限流）
   hash-concurrency: 64
+  # 启动后自动用系统默认浏览器打开控制台（headless 环境自动降级为打印地址）
+  auto-open-browser: true
 
 springdoc:
   swagger-ui:
