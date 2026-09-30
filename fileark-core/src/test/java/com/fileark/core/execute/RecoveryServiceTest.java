@@ -27,17 +27,19 @@ class RecoveryServiceTest {
 
     PlanStore planStore;
     UndoLogStore undoLogStore;
+    InMemoryStores.MemScanStore scanStore;
     RecoveryService recovery;
 
     @BeforeEach
     void setUp() {
         planStore = new InMemoryStores.MemPlanStore();
         undoLogStore = new InMemoryStores.MemUndoLogStore();
+        scanStore = new InMemoryStores.MemScanStore();
         FsFileOps fs = new FsFileOps();
         TransactionalExecutor executor = new TransactionalExecutor(planStore, undoLogStore,
                 new InMemoryStores.MemQuarantineStore(), fs, new PreflightChecker(fs),
                 dir.resolve("quarantine"), Clock.fixed(Instant.EPOCH, ZoneId.of("UTC")), 30);
-        recovery = new RecoveryService(planStore, undoLogStore, fs, executor);
+        recovery = new RecoveryService(planStore, undoLogStore, fs, executor, scanStore);
     }
 
     @Test
@@ -78,5 +80,20 @@ class RecoveryServiceTest {
     @Test
     void noExecutingPlanIsNoOp() {
         assertThat(recovery.recoverOnStartup()).isZero();
+    }
+
+    @Test
+    void staleRunningScansAreMarkedFailed() {
+        long s1 = scanStore.create("/tmp/a");
+        long s2 = scanStore.create("/tmp/b");
+        scanStore.updateStatus(s2, com.fileark.core.scan.ScanStatus.DONE, null);
+
+        int fixed = recovery.recoverStaleScans();
+
+        assertThat(fixed).isEqualTo(1);
+        assertThat(scanStore.find(s1).orElseThrow().status())
+                .isEqualTo(com.fileark.core.scan.ScanStatus.FAILED);
+        assertThat(scanStore.find(s2).orElseThrow().status())
+                .isEqualTo(com.fileark.core.scan.ScanStatus.DONE);
     }
 }

@@ -93,6 +93,41 @@ public class ScanController {
                 .toList();
     }
 
+    /** 导出重复报告 CSV（全部组，含状态列）：Excel/WPS 直接打开，用于留档或人工核对。 */
+    @GetMapping("/{id}/duplicates/export")
+    public ResponseEntity<byte[]> exportDuplicates(@PathVariable long id) {
+        scanStore.find(id).orElseThrow(() ->
+                new FileArkException(ErrorCode.INVALID_REQUEST, "扫描不存在: " + id));
+        StringBuilder csv = new StringBuilder("group_id,hash,status,path,size_bytes,mtime\n");
+        for (com.fileark.core.port.DuplicateStore.GroupView g : duplicateStore.groupsOf(id)) {
+            for (com.fileark.core.model.FileMeta m : g.members()) {
+                csv.append(g.id()).append(',')
+                        .append(csvEscape(g.hash())).append(',')
+                        .append(g.status()).append(',')
+                        .append(csvEscape(m.path().toString())).append(',')
+                        .append(m.size()).append(',')
+                        .append(csvEscape(m.mtime() == null ? "" : m.mtime().toString()))
+                        .append('\n');
+            }
+        }
+        byte[] body = csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=scan-" + id + "-duplicates.csv")
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .body(body);
+    }
+
+    /** CSV 字段转义：含逗号/引号/换行时加引号，内部引号翻倍。 */
+    private static String csvEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            return '"' + value.replace("\"", "\"\"") + '"';
+        }
+        return value;
+    }
+
     @GetMapping(value = "/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@PathVariable long id) {
         ScanStore.ScanRow row = scanStore.find(id).orElseThrow(() ->

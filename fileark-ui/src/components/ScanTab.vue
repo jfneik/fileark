@@ -140,6 +140,11 @@ async function confirmCreateAndExecute(g: DuplicateGroup) {
   }
 }
 
+/** 导出重复报告 CSV（含全部组与状态列），用于留档或人工核对。 */
+function exportCsv() {
+  window.open(`/api/scans/${selectedScanId.value}/duplicates/export`)
+}
+
 refreshScans()
 </script>
 
@@ -190,9 +195,12 @@ refreshScans()
 
     <div class="group-head">
       <h4>重复文件组（CONFIRMED，扫描 #{{ selectedScanId ?? '—' }}）</h4>
-      <el-button v-if="groups.length > 1" type="danger" size="small" @click="cleanAll">
-        一键清理全部（{{ groups.reduce((n, g) => n + g.members.length - 1, 0) }} 个副本）
-      </el-button>
+      <span>
+        <el-button v-if="selectedScanId" size="small" @click="exportCsv">导出 CSV 报告</el-button>
+        <el-button v-if="groups.length > 1" type="danger" size="small" @click="cleanAll">
+          一键清理全部（{{ groups.reduce((n, g) => n + g.members.length - 1, 0) }} 个副本）
+        </el-button>
+      </span>
     </div>
     <el-empty v-if="groups.length === 0" description="暂无确认的重复组" />
     <div v-for="g in groups" :key="g.id" class="group-card">

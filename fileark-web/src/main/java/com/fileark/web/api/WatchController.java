@@ -2,8 +2,6 @@ package com.fileark.web.api;
 
 import com.fileark.core.exception.ErrorCode;
 import com.fileark.core.exception.FileArkException;
-import com.fileark.core.port.ScanStore;
-import com.fileark.core.port.SettingsStore;
 import com.fileark.web.service.WatchManager;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,11 +20,9 @@ import java.util.Map;
 public class WatchController {
 
     private final WatchManager manager;
-    private final SettingsStore settings;
 
-    public WatchController(WatchManager manager, SettingsStore settings) {
+    public WatchController(WatchManager manager) {
         this.manager = manager;
-        this.settings = settings;
     }
 
     public record StartWatchRequest(String dir) {
@@ -56,11 +52,9 @@ public class WatchController {
 
     @DeleteMapping
     public Map<String, Object> stop(@RequestParam String dir) {
+        // WatchManager.stop() 内部已重新持久化绑定列表，这里不要再动 settings
+        // （曾在此对 settings 做字符串 replace，子串相同的目录会被误伤，已移除）
         manager.stop(Path.of(dir));
-        // 清掉持久化里可能残留的失效绑定
-        String saved = settings.get(WatchManager.SETTINGS_KEY).orElse("");
-        settings.put(WatchManager.SETTINGS_KEY,
-                saved.replace("," + dir, "").replace(dir + ",", "").replace(dir, ""));
         return Map.of("dir", dir, "watching", false);
     }
 }

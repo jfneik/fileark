@@ -5,7 +5,9 @@ import com.fileark.core.plan.Operation;
 import com.fileark.core.plan.OperationStatus;
 import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.port.PlanStore;
+import com.fileark.core.port.ScanStore;
 import com.fileark.core.port.UndoLogStore;
+import com.fileark.core.scan.ScanStatus;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -26,18 +28,41 @@ public final class RecoveryService {
     private final UndoLogStore undoLogStore;
     private final FileOps fileOps;
     private final TransactionalExecutor executor;
+    private final ScanStore scanStore;
 
     public RecoveryService(PlanStore planStore, UndoLogStore undoLogStore,
-                           FileOps fileOps, TransactionalExecutor executor) {
+                           FileOps fileOps, TransactionalExecutor executor, ScanStore scanStore) {
         this.planStore = planStore;
         this.undoLogStore = undoLogStore;
         this.fileOps = fileOps;
         this.executor = executor;
+        this.scanStore = scanStore;
     }
 
     /** @return 恢复的计划数；未发现 EXECUTING 计划时为 0。 */
     public int recoverOnStartup() {
         return planStore.findExecutingPlan().map(this::recover).orElse(0);
+    }
+
+    /**
+     * 扫描任务恢复：单用户单进程应用，启动时仍处于 RUNNING 的扫描必然来自
+     * 上一个已死进程——标记 FAILED，避免 UI 永远显示「扫描中」。
+     */
+    public int recoverStaleScans() {
+        int fixed = 0;
+        for (ScanStore.ScanRow row : scanStore.list()) {
+            if (row.status() == ScanStatus.RUNNING) {
+                try {
+                    scanStore.updateStatus(row.id(), ScanStatus.FAILED,
+                            JSON.writeValueAsString(java.util.Map.of("error", "进程中断：上次运行未完成")));
+                    fixed++;
+                } catch (java.io.IOException ignored) {
+                    scanStore.updateStatus(row.id(), ScanStatus.FAILED, null);
+                    fixed++;
+                }
+            }
+        }
+        return fixed;
     }
 
     private int recover(PlanStore.PlanRow row) {

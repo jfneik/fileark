@@ -25,6 +25,19 @@ public final class PreflightChecker {
     /** 返回 operationId → 问题；未出现的操作视为通过。 */
     public Map<Long, PreflightIssue> check(List<Operation> ops) {
         Map<Long, PreflightIssue> issues = new LinkedHashMap<>();
+        // 计划内目标冲突：预检只看磁盘快照，同一计划内两条操作可能指向同一目标
+        // （如同名文件移入同一新目录）。后到的操作会被先行操作占住目标，
+        // 而 ATOMIC_MOVE 在 Unix 上会静默替换目标文件——必须在此拦截。
+        java.util.Set<String> seenDst = new java.util.HashSet<>();
+        for (Operation op : ops) {
+            if (op.dst() == null) {
+                continue;
+            }
+            if (!seenDst.add(op.dst().toString())) {
+                issues.put(op.id(), new PreflightIssue(ErrorCode.TARGET_CONFLICT,
+                        "计划内已有操作使用相同目标（不覆盖）: " + op.dst()));
+            }
+        }
         long bytesToMove = 0;
         for (Operation op : ops) {
             if (op.dst() != null && containsParentTraversal(op.dst())) {

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: 后端测试与打包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: mvnw verify（单元/属性/架构测试 + 覆盖率）
+        run: ./mvnw -B verify
+
+  frontend:
+    name: 前端构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: fileark-ui/package-lock.json
+      - name: 安装依赖
+        working-directory: fileark-ui
+        run: npm ci
+      - name: 构建
+        working-directory: fileark-ui
+        run: npm run build

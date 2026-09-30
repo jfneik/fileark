@@ -150,6 +150,10 @@ public class PlanController {
                         .stream()
                         .filter(f -> f.path().startsWith(targetDir))
                         .toList();
+                if (files.isEmpty()) {
+                    throw new FileArkException(ErrorCode.INVALID_REQUEST,
+                            "目标目录 " + targetDir + " 在最近的扫描索引中没有文件，请先扫描该目录");
+                }
                 yield planner.fromRules(files, List.of(rule), targetDir,
                         "应用规则「" + rule.name() + "」于 " + targetDir);
             }

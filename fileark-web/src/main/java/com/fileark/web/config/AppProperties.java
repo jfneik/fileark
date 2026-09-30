@@ -29,8 +29,13 @@ public record AppProperties(
         }
     }
 
+    /** 展开 ~ 为用户主目录；仅处理 "~/" 与单独的 "~"，"~other" 这类写法原样返回。 */
     public static java.nio.file.Path expand(String path) {
-        String p = path.startsWith("~") ? System.getProperty("user.home") + path.substring(1) : path;
+        if (path.equals("~")) {
+            return java.nio.file.Path.of(System.getProperty("user.home"));
+        }
+        String p = path.startsWith("~/")
+                ? System.getProperty("user.home") + path.substring(1) : path;
         return java.nio.file.Path.of(p);
     }
 }

@@ -37,7 +37,8 @@ class ScanOrchestratorTest {
         InMemoryStores.MemDuplicateStore dupStore = new InMemoryStores.MemDuplicateStore();
         ExecutorService hashPool = Executors.newVirtualThreadPerTaskExecutor();
         ScanOrchestrator orchestrator = new ScanOrchestrator(
-                scanStore, repo, dupStore, new DuplicateDetector(), hashPool, 4);
+                scanStore, repo, dupStore, new DuplicateDetector(), hashPool, 4,
+                new InMemoryStores.MemSettingsStore());
 
         long scanId = orchestrator.createScan(dir);
         orchestrator.runScan(scanId, dir, ScanEventListener.NOOP);
@@ -68,7 +69,8 @@ class ScanOrchestratorTest {
         InMemoryStores.MemFileRepository repo = new InMemoryStores.MemFileRepository();
         InMemoryStores.MemDuplicateStore dupStore = new InMemoryStores.MemDuplicateStore();
         ScanOrchestrator orchestrator = new ScanOrchestrator(scanStore, repo, dupStore,
-                new DuplicateDetector(), Executors.newVirtualThreadPerTaskExecutor(), 4);
+                new DuplicateDetector(), Executors.newVirtualThreadPerTaskExecutor(), 4,
+                new InMemoryStores.MemSettingsStore());
 
         long first = orchestrator.createScan(dir);
         orchestrator.runScan(first, dir, ScanEventListener.NOOP);
@@ -95,7 +97,8 @@ class ScanOrchestratorTest {
         ScanStore scanStore = new InMemoryStores.MemScanStore();
         ScanOrchestrator orchestrator = new ScanOrchestrator(scanStore,
                 new InMemoryStores.MemFileRepository(), new InMemoryStores.MemDuplicateStore(),
-                new DuplicateDetector(), Executors.newVirtualThreadPerTaskExecutor(), 2);
+                new DuplicateDetector(), Executors.newVirtualThreadPerTaskExecutor(), 2,
+                new InMemoryStores.MemSettingsStore());
 
         long scanId = orchestrator.createScan(dir);
         orchestrator.runScan(scanId, dir, new ScanEventListener() {

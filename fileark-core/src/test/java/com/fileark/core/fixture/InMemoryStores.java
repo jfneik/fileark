@@ -259,6 +259,25 @@ public final class InMemoryStores {
         }
     }
 
+    public static class MemSettingsStore implements com.fileark.core.port.SettingsStore {
+        public final Map<String, String> kv = new ConcurrentHashMap<>();
+
+        @Override
+        public Optional<String> get(String key) {
+            return Optional.ofNullable(kv.get(key));
+        }
+
+        @Override
+        public void put(String key, String value) {
+            kv.put(key, value);
+        }
+
+        @Override
+        public Map<String, String> all() {
+            return new java.util.LinkedHashMap<>(kv);
+        }
+    }
+
     public static class MemQuarantineStore implements com.fileark.core.port.QuarantineStore {
         public final Map<Long, com.fileark.core.quarantine.QuarantineItem> items = new ConcurrentHashMap<>();
         private final AtomicLong seq = new AtomicLong();

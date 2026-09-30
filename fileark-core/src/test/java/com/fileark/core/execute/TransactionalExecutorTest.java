@@ -175,6 +175,30 @@ class TransactionalExecutorTest {
     }
 
     @Test
+    void duplicateTargetWithinPlanIsRejectedAndNeverOverwrites() throws Exception {
+        // 回归测试（P0）：两条操作指向同一目标 + 同名文件。
+        // 修复前：ATOMIC_MOVE 在 Unix 上映射 rename(2)，第二条静默覆盖第一条的数据。
+        // 修复后：预检拦截计划内冲突，目标文件完好无损。
+        Path a = Files.write(dir.resolve("a.txt"), "A".getBytes());
+        Path b = Files.write(dir.resolve("b.txt"), "B".getBytes());
+        Path dst = dir.resolve("out").resolve("same.txt");
+
+        long planId = planStore.create(PlanStatus.PLANNED, "计划内冲突", List.of(
+                moveOp(a, dst), moveOp(b, dst)));
+        Plan plan = executor.execute(planId);
+
+        assertThat(plan.status()).isEqualTo(PlanStatus.EXECUTED);
+        assertThat(plan.operations().get(0).status()).isEqualTo(OperationStatus.DONE);
+        assertThat(plan.operations().get(1).status()).isEqualTo(OperationStatus.SKIPPED);
+        assertThat(plan.operations().get(1).error()).contains("TARGET_CONFLICT");
+        assertThat(Files.readString(dst)).isEqualTo("A"); // 第一条的文件未被覆盖
+
+        executor.rollback(planId);
+        assertThat(Files.readString(dir.resolve("a.txt"))).isEqualTo("A");
+        assertThat(Files.readString(dir.resolve("b.txt"))).isEqualTo("B");
+    }
+
+    @Test
     void deleteToQuarantineIsReversible() throws Exception {
         Path a = Files.write(dir.resolve("a.txt"), "A".getBytes());
         Operation op = Operation.pending(com.fileark.core.plan.OperationType.DELETE_TO_QUARANTINE,

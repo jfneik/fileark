@@ -25,5 +25,9 @@ public class RecoveryRunner implements ApplicationRunner {
         if (recovered > 0) {
             log.warn("检测到上次执行中断，已按撤销日志恢复 {} 个计划；NEEDS_REVIEW 计划请到执行中心人工确认", recovered);
         }
+        int staleScans = recoveryService.recoverStaleScans();
+        if (staleScans > 0) {
+            log.warn("已将 {} 个上次中断的扫描标记为 FAILED", staleScans);
+        }
     }
 }

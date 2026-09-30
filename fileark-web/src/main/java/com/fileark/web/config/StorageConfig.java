@@ -121,8 +121,9 @@ public class StorageConfig {
 
     @Bean
     public RecoveryService recoveryService(PlanStore planStore, UndoLogStore undoLogStore,
-                                           FileOps fileOps, TransactionalExecutor executor) {
-        return new RecoveryService(planStore, undoLogStore, fileOps, executor);
+                                           FileOps fileOps, TransactionalExecutor executor,
+                                           ScanStore scanStore) {
+        return new RecoveryService(planStore, undoLogStore, fileOps, executor, scanStore);
     }
 
     @Bean
@@ -151,9 +152,9 @@ public class StorageConfig {
     public ScanOrchestrator scanOrchestrator(ScanStore scanStore, FileRepository fileRepository,
                                              DuplicateStore duplicateStore,
                                              DuplicateDetector detector, ExecutorService hashPool,
-                                             AppProperties props) {
+                                             AppProperties props, SettingsStore settingsStore) {
         return new ScanOrchestrator(scanStore, fileRepository, duplicateStore, detector,
-                hashPool, props.hashConcurrency());
+                hashPool, props.hashConcurrency(), settingsStore);
     }
 
     @PreDestroy

@@ -36,16 +36,19 @@ public final class ScanOrchestrator {
     private final DuplicateDetector detector;
     private final ExecutorService hashPool;
     private final int hashConcurrency;
+    private final com.fileark.core.port.SettingsStore settingsStore;
 
     public ScanOrchestrator(ScanStore scanStore, FileRepository fileRepository,
                             DuplicateStore duplicateStore, DuplicateDetector detector,
-                            ExecutorService hashPool, int hashConcurrency) {
+                            ExecutorService hashPool, int hashConcurrency,
+                            com.fileark.core.port.SettingsStore settingsStore) {
         this.scanStore = scanStore;
         this.fileRepository = fileRepository;
         this.duplicateStore = duplicateStore;
         this.detector = detector;
         this.hashPool = hashPool;
         this.hashConcurrency = hashConcurrency;
+        this.settingsStore = settingsStore;
     }
 
     public long createScan(Path root) {
@@ -55,7 +58,17 @@ public final class ScanOrchestrator {
     public void runScan(long scanId, Path root, ScanEventListener listener) {
         try {
             listener.onPhase("SCANNING");
-            List<Path> paths = new FileScanner(com.fileark.core.scan.Exclusions.defaults())
+            // 排除目录 = 内置默认 + 用户自定义（settings: scan.excludes，逗号分隔）
+            // 这是「受保护目录」机制的落点：被排除的目录永不进入索引，也就永远不会被整理
+            java.util.Set<String> names = new java.util.HashSet<>(
+                    com.fileark.core.scan.Exclusions.defaults().dirNames());
+            String custom = settingsStore.get("scan.excludes").orElse("");
+            for (String n : custom.split(",")) {
+                if (!n.isBlank()) {
+                    names.add(n.trim());
+                }
+            }
+            List<Path> paths = new FileScanner(new com.fileark.core.scan.Exclusions(names))
                     .collect(root, new ScanListener() {
                         @Override
                         public void onProgress(Path current, int count) {

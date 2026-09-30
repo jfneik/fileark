@@ -28,6 +28,11 @@ public final class FsFileOps implements FileOps {
 
     @Override
     public void move(Path src, Path dst) throws IOException {
+        if (Files.exists(dst)) {
+            // ATOMIC_MOVE 在 Unix 上映射 rename(2)，会静默替换已存在的目标——
+            // 「绝不覆盖」必须在此显式保证，不能依赖 move 的默认语义
+            throw new java.nio.file.FileAlreadyExistsException(dst.toString());
+        }
         try {
             Files.move(src, dst, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
