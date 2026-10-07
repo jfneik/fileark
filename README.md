@@ -140,7 +140,7 @@ scripts/start.sh
 ## 测试
 
 ```bash
-./mvnw test          # 42 个测试：core 35 + storage 4 + 架构守护 3
+./mvnw test          # 45 个测试：core 37 + storage 5 + 架构守护 3
 ```
 
 - **属性测试**（jqwik，各 100 组随机用例）：不变量 A——任意「移动/重命名/移入安全区」操作序列执行后撤销，目录树逐字节还原；不变量 B——构建计划（dry-run 路径）绝不触碰磁盘。
