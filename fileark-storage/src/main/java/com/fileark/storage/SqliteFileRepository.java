@@ -127,6 +127,26 @@ public final class SqliteFileRepository implements FileRepository {
         }
     }
 
+    @Override
+    public List<FileRepository.KnownHash> allKnownHashes() {
+        // 单条 SQL 全量预取（同三元组只留最新一条：靠 MAX(id) 去重）
+        String sql = "SELECT fe.path, fe.size, fe.mtime, fe.content_hash FROM file_entry fe " +
+                "JOIN (SELECT MAX(id) AS id FROM file_entry WHERE content_hash IS NOT NULL " +
+                "      GROUP BY path, size, mtime) latest ON latest.id = fe.id";
+        try (var conn = db.open();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             var rs = ps.executeQuery()) {
+            List<FileRepository.KnownHash> out = new ArrayList<>();
+            while (rs.next()) {
+                out.add(new FileRepository.KnownHash(rs.getString(1), rs.getLong(2),
+                        Instant.parse(rs.getString(3)), rs.getString(4)));
+            }
+            return out;
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private void updateSingle(String sql, String value, long id) {
         try (var conn = db.open();
              PreparedStatement ps = conn.prepareStatement(sql)) {

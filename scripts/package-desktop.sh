@@ -7,27 +7,33 @@ set -euo pipefail
 APP_VERSION="1.0.0"
 JAR="fileark-web/target/fileark-web-0.1.0-SNAPSHOT.jar"
 OUT="dist"
+STAGE="dist/stage"
 
-# 运行期所需模块：spring boot web + sqlite jdbc（native lib）+ jackson 等，
-# 用 jdeps 精确分析过之后可以缩减；这里取常用超集，稳妥优先。
-MODULES="java.base,java.sql,java.naming,java.management,java.instrument,java.security.jgss,jdk.unsupported,java.desktop"
+# 运行期所需模块：spring boot web + sqlite jdbc（含 native lib）+ jackson 等。
+# 实测补充过 java.xml / java.logging / jdk.crypto.ec；用 jdeps 可进一步缩减。
+MODULES="java.base,java.sql,java.naming,java.management,java.instrument,java.security.jgss,java.security.sasl,java.xml,java.logging,java.desktop,jdk.unsupported,jdk.crypto.ec"
 
 if [[ ! -f "$JAR" ]]; then
   echo "缺少 $JAR，请先执行：./mvnw -DskipTests package" >&2
   exit 1
 fi
 
+# 只把主 jar 放进 staging，避免把 repackage 产生的 *.jar.original 一并打进镜像
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+cp "$JAR" "$STAGE/"
+
 mkdir -p "$OUT"
 
 case "$(uname -s)" in
   Darwin)
     jpackage \
-      --type dmg \
+      --type app-image \
       --name FileArk \
       --app-version "$APP_VERSION" \
-      --input "$(dirname "$JAR")" \
+      --input "$STAGE" \
       --main-jar "$(basename "$JAR")" \
-      --java-options "-Xmx512m" \
+      --java-options "-Xmx1g" \
       --add-modules "$MODULES" \
       --dest "$OUT"
     ;;
@@ -36,9 +42,9 @@ case "$(uname -s)" in
       --type deb \
       --name fileark \
       --app-version "$APP_VERSION" \
-      --input "$(dirname "$JAR")" \
+      --input "$STAGE" \
       --main-jar "$(basename "$JAR")" \
-      --java-options "-Xmx512m" \
+      --java-options "-Xmx1g" \
       --add-modules "$MODULES" \
       --dest "$OUT"
     ;;

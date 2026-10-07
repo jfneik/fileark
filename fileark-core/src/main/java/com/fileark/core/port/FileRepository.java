@@ -27,4 +27,14 @@ public interface FileRepository {
      * 返回其内容哈希，本次扫描可跳过全量哈希。
      */
     Optional<String> findReusableContentHash(String path, long size, Instant mtime);
+
+    /** 已有全量哈希的条目（跨全部历史扫描），供增量扫描一次性预取。 */
+    List<KnownHash> allKnownHashes();
+
+    /** path+size+mtime 三元组 → 内容哈希。 */
+    record KnownHash(String path, long size, Instant mtime, String hash) {
+        public String tripleKey() {
+            return path + "|" + size + "|" + mtime;
+        }
+    }
 }

@@ -85,11 +85,11 @@ public final class ScanOrchestrator {
             for (Path p : paths) {
                 metas.add(FileMeta.of(p));
             }
-            // 增量扫描（F10）：path+size+mtime 未变的文件直接复用历史全量哈希
-            Map<String, String> knownHashes = new LinkedHashMap<>();
-            for (FileMeta m : metas) {
-                fileRepository.findReusableContentHash(m.path().toString(), m.size(), m.mtime())
-                        .ifPresent(h -> knownHashes.put(m.path().toString(), h));
+            // 增量扫描（F10）：一次性预取全部已知哈希，按 path|size|mtime 三元组内存匹配。
+            // 不逐文件查库——曾因 2 万次「开连接+查询+关连接」让二次扫描比首次还慢一倍。
+            Map<String, String> knownHashes = new java.util.HashMap<>();
+            for (com.fileark.core.port.FileRepository.KnownHash k : fileRepository.allKnownHashes()) {
+                knownHashes.put(k.tripleKey(), k.hash());
             }
             metas = fileRepository.insertAll(scanId, metas);
 
@@ -165,7 +165,7 @@ public final class ScanOrchestrator {
         List<Future<String>> futures = new ArrayList<>();
         for (FileMeta m : group.members()) {
             futures.add(hashPool.submit(() -> {
-                String known = knownHashes.get(m.path().toString());
+                String known = knownHashes.get(m.path() + "|" + m.size() + "|" + m.mtime());
                 if (known != null) {
                     reused.incrementAndGet();
                     return known;

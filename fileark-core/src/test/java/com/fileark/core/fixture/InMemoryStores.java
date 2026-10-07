@@ -111,11 +111,23 @@ public final class InMemoryStores {
 
         @Override
         public java.util.Optional<String> findReusableContentHash(String path, long size, Instant mtime) {
-            return byId.values().stream()
-                    .filter(m -> m.path().toString().equals(path) && m.size() == size && m.mtime().equals(mtime))
-                    .map(m -> contentHashes.get(m.id()))
-                    .filter(java.util.Objects::nonNull)
+            return allKnownHashes().stream()
+                    .filter(k -> k.path().equals(path) && k.size() == size && k.mtime().equals(mtime))
+                    .map(com.fileark.core.port.FileRepository.KnownHash::hash)
                     .findFirst();
+        }
+
+        @Override
+        public List<com.fileark.core.port.FileRepository.KnownHash> allKnownHashes() {
+            return byId.values().stream()
+                    .map(m -> {
+                        String h = contentHashes.get(m.id());
+                        return h == null ? null
+                                : new com.fileark.core.port.FileRepository.KnownHash(
+                                        m.path().toString(), m.size(), m.mtime(), h);
+                    })
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toList());
         }
 
         /** 测试断言用。 */

@@ -3,6 +3,15 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1] - 2026-10-07
+
+### 性能
+- **增量哈希复用 N+1 修复**：原先逐文件查库（每次新开 SQLite 连接），2 万文件二次扫描比首次慢一倍（100.7s vs 47.5s）；改为单条 SQL 全量预取（`FileRepository.allKnownHashes`，同三元组取最新）+ 内存 `path|size|mtime` 匹配，二次扫描降至 25.5s、复用率 100%
+- 新增万级规模基准脚本 `scripts/bench_large.py`（20,000 文件 / 251MB：首次扫描 27s ≈ 740 文件/秒，RSS ≈ 260MB）
+
+### 新增
+- 桌面打包脚本实测通过：jpackage 产出 123MB 免安装 `.app`，独立运行验证（补齐 `java.xml/java.logging/jdk.crypto.ec` 模块；staging 只装主 jar）
+
 ## [1.1.0] - 2026-09-29
 
 ### 新增
