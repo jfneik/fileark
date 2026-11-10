@@ -12,7 +12,12 @@ const groups = ref<FileEntry[][]>([])
 const loading = ref(false)
 
 async function refreshScans() {
-  scans.value = (await api.listScans()).data.filter(s => s.status === 'DONE')
+  try {
+    scans.value = (await api.listScans()).data.filter(s => s.status === 'DONE')
+  } catch (e) {
+    ElMessage.error(errText(e))
+    return
+  }
   if (scanId.value == null && scans.value.length > 0) {
     scanId.value = scans.value[0].id
   }
@@ -36,6 +41,8 @@ async function detect() {
 }
 
 refreshScans()
+
+defineExpose({ refresh: refreshScans })
 </script>
 
 <template>
@@ -72,7 +79,7 @@ refreshScans()
             </template>
           </el-image>
           <p class="thumb-path" :title="m.path">{{ m.path }}</p>
-          <p class="thumb-meta">{{ fmtSize(m.size) }} · {{ m.mtime.slice(0, 10) }}</p>
+          <p class="thumb-meta">{{ fmtSize(m.size) }} · {{ m.mtime?.slice(0, 10) ?? '—' }}</p>
         </div>
       </div>
     </div>

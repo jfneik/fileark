@@ -3,6 +3,7 @@ package com.fileark.web.api;
 import com.fileark.core.model.Category;
 import com.fileark.core.model.FileMeta;
 import com.fileark.core.port.FileRepository;
+import java.time.Duration;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -67,7 +68,7 @@ public class FileController {
             ImageIO.write(thumb, "png", out);
             return ResponseEntity.ok()
                     .contentType(MediaType.IMAGE_PNG)
-                    .cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(1)))
+                    .cacheControl(CacheControl.maxAge(Duration.ofHours(1)))
                     .body(out.toByteArray());
         } catch (Exception e) {
             // 损坏/不支持的图片一律 404，前端显示占位即可

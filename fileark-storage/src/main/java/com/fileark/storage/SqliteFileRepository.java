@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +32,7 @@ public final class SqliteFileRepository implements FileRepository {
             try (var ps = conn.prepareStatement(
                     "INSERT INTO file_entry(scan_id, path, size, mtime, mime_type, category) " +
                             "VALUES (?, ?, ?, ?, ?, ?)",
-                    java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                    Statement.RETURN_GENERATED_KEYS)) {
                 List<FileMeta> out = new ArrayList<>(entries.size());
                 for (FileMeta f : entries) {
                     ps.setLong(1, scanId);
@@ -110,7 +111,7 @@ public final class SqliteFileRepository implements FileRepository {
     }
 
     @Override
-    public java.util.Optional<String> findReusableContentHash(String path, long size, Instant mtime) {
+    public Optional<String> findReusableContentHash(String path, long size, Instant mtime) {
         try (var conn = db.open();
              PreparedStatement ps = conn.prepareStatement(
                      "SELECT content_hash FROM file_entry " +
@@ -120,7 +121,7 @@ public final class SqliteFileRepository implements FileRepository {
             ps.setLong(2, size);
             ps.setString(3, mtime.toString());
             try (var rs = ps.executeQuery()) {
-                return rs.next() ? java.util.Optional.ofNullable(rs.getString(1)) : java.util.Optional.empty();
+                return rs.next() ? Optional.ofNullable(rs.getString(1)) : Optional.empty();
             }
         } catch (SQLException e) {
             throw new IllegalStateException(e);

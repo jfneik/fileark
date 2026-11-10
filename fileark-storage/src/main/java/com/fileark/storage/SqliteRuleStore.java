@@ -9,6 +9,7 @@ import com.fileark.core.rule.Rule;
 import com.fileark.core.rule.RuleAction;
 import com.fileark.core.port.RuleStore;
 
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,7 +29,7 @@ public final class SqliteRuleStore implements RuleStore {
              var ps = conn.prepareStatement(
                      "INSERT INTO rule(name, priority, enabled, conditions_json, action_json) " +
                              "VALUES (?, ?, ?, ?, ?)",
-                     java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                     Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, rule.name());
             ps.setInt(2, rule.priority());
             ps.setInt(3, rule.enabled() ? 1 : 0);

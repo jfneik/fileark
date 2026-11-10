@@ -7,7 +7,9 @@ import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.port.PlanStore;
 
 import java.nio.file.Path;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +31,7 @@ public final class SqlitePlanStore implements PlanStore {
                 long planId;
                 try (var ps = conn.prepareStatement(
                         "INSERT INTO plan(status, description, created_at) VALUES (?, ?, ?)",
-                        java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                        Statement.RETURN_GENERATED_KEYS)) {
                     ps.setString(1, status.name());
                     ps.setString(2, description);
                     ps.setString(3, Instant.now().toString());
@@ -68,7 +70,7 @@ public final class SqlitePlanStore implements PlanStore {
     @Override
     public Optional<PlanRow> findPlan(long id) {
         try (var conn = db.open();
-             var ps = conn.prepareStatement("SELECT * FROM plan WHERE id = ?")) {
+             var ps = conn.prepareStatement("SELECT id, status, description, error_msg, created_at, executed_at, rolled_back_at FROM plan WHERE id = ?")) {
             ps.setLong(1, id);
             try (var rs = ps.executeQuery()) {
                 return rs.next() ? Optional.of(mapPlan(rs)) : Optional.empty();
@@ -81,7 +83,7 @@ public final class SqlitePlanStore implements PlanStore {
     @Override
     public List<PlanRow> listPlans() {
         try (var conn = db.open();
-             var rs = conn.createStatement().executeQuery("SELECT * FROM plan ORDER BY id DESC")) {
+             var rs = conn.createStatement().executeQuery("SELECT id, status, description, error_msg, created_at, executed_at, rolled_back_at FROM plan ORDER BY id DESC")) {
             List<PlanRow> rows = new ArrayList<>();
             while (rs.next()) {
                 rows.add(mapPlan(rs));
@@ -96,7 +98,7 @@ public final class SqlitePlanStore implements PlanStore {
     public List<Operation> operationsOf(long planId) {
         try (var conn = db.open();
              var ps = conn.prepareStatement(
-                     "SELECT * FROM plan_operation WHERE plan_id = ? ORDER BY seq")) {
+                     "SELECT id, plan_id, seq, op_type, src, dst, expected_size, expected_mtime, status, error_msg FROM plan_operation WHERE plan_id = ? ORDER BY seq")) {
             ps.setLong(1, planId);
             try (var rs = ps.executeQuery()) {
                 List<Operation> ops = new ArrayList<>();
@@ -121,7 +123,7 @@ public final class SqlitePlanStore implements PlanStore {
     @Override
     public Optional<PlanRow> findExecutingPlan() {
         try (var conn = db.open();
-             var ps = conn.prepareStatement("SELECT * FROM plan WHERE status = 'EXECUTING' ORDER BY id LIMIT 1")) {
+             var ps = conn.prepareStatement("SELECT id, status, description, error_msg, created_at, executed_at, rolled_back_at FROM plan WHERE status = 'EXECUTING' ORDER BY id LIMIT 1")) {
             try (var rs = ps.executeQuery()) {
                 return rs.next() ? Optional.of(mapPlan(rs)) : Optional.empty();
             }
@@ -154,6 +156,21 @@ public final class SqlitePlanStore implements PlanStore {
     }
 
     @Override
+    public boolean tryUpdatePlanStatus(long planId, PlanStatus expectedFrom, PlanStatus to, String error) {
+        try (var conn = db.open();
+             var ps = conn.prepareStatement(
+                     "UPDATE plan SET status = ?, error_msg = ? WHERE id = ? AND status = ?")) {
+            ps.setString(1, to.name());
+            ps.setString(2, error);
+            ps.setLong(3, planId);
+            ps.setString(4, expectedFrom.name());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Override
     public void updateOperationStatus(long planId, long operationId, OperationStatus status, String error) {
         try (var conn = db.open();
              var ps = conn.prepareStatement(
@@ -168,7 +185,7 @@ public final class SqlitePlanStore implements PlanStore {
         }
     }
 
-    private static PlanRow mapPlan(java.sql.ResultSet rs) throws SQLException {
+    private static PlanRow mapPlan(ResultSet rs) throws SQLException {
         return new PlanRow(rs.getLong("id"), PlanStatus.valueOf(rs.getString("status")),
                 rs.getString("description"), rs.getString("error_msg"),
                 rs.getString("created_at"), rs.getString("executed_at"), rs.getString("rolled_back_at"));

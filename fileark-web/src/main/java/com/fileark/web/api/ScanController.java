@@ -2,9 +2,12 @@ package com.fileark.web.api;
 
 import com.fileark.core.exception.ErrorCode;
 import com.fileark.core.exception.FileArkException;
+import com.fileark.core.model.FileMeta;
 import com.fileark.core.orchestrator.ScanOrchestrator;
 import com.fileark.core.port.DuplicateStore;
 import com.fileark.core.port.ScanStore;
+import com.fileark.core.scan.ScanStatus;
+import com.fileark.web.config.AppProperties;
 import com.fileark.web.service.ScanRunner;
 import com.fileark.web.sse.SseHub;
 import org.springframework.http.MediaType;
@@ -48,7 +51,7 @@ public class ScanController {
     @PostMapping
     public Map<String, Object> create(@RequestBody CreateScanRequest request) {
         // 支持 "~/Downloads" 这类写法：服务端展开 ~，前端快捷目录按钮才能工作
-        Path root = com.fileark.web.config.AppProperties.expand(request.rootPath())
+        Path root = AppProperties.expand(request.rootPath())
                 .toAbsolutePath().normalize();
         // 防呆：磁盘根目录与整个用户主目录不属于合理的扫描范围
         if (root.getParent() == null) {
@@ -85,11 +88,11 @@ public class ScanController {
     }
 
     @GetMapping("/{id}/duplicates")
-    public List<Dto.GroupDto> duplicates(@PathVariable long id,
+    public List<GroupDto> duplicates(@PathVariable long id,
                                          @RequestParam(required = false) String status) {
         return duplicateStore.groupsOf(id).stream()
                 .filter(g -> status == null || g.status().name().equalsIgnoreCase(status))
-                .map(Dto.GroupDto::of)
+                .map(GroupDto::of)
                 .toList();
     }
 
@@ -99,8 +102,8 @@ public class ScanController {
         scanStore.find(id).orElseThrow(() ->
                 new FileArkException(ErrorCode.INVALID_REQUEST, "扫描不存在: " + id));
         StringBuilder csv = new StringBuilder("group_id,hash,status,path,size_bytes,mtime\n");
-        for (com.fileark.core.port.DuplicateStore.GroupView g : duplicateStore.groupsOf(id)) {
-            for (com.fileark.core.model.FileMeta m : g.members()) {
+        for (DuplicateStore.GroupView g : duplicateStore.groupsOf(id)) {
+            for (FileMeta m : g.members()) {
                 csv.append(g.id()).append(',')
                         .append(csvEscape(g.hash())).append(',')
                         .append(g.status()).append(',')
@@ -134,7 +137,7 @@ public class ScanController {
                 new FileArkException(ErrorCode.INVALID_REQUEST, "扫描不存在: " + id));
         SseEmitter emitter = sseHub.subscribe(id);
         // 立即推送当前状态：订阅已结束的扫描时，前端能据此关闭连接而不是空等
-        String phase = row.status() == com.fileark.core.scan.ScanStatus.RUNNING
+        String phase = row.status() == ScanStatus.RUNNING
                 ? "SCANNING" : row.status().name();
         sseHub.send(id, "phase", phase);
         return emitter;

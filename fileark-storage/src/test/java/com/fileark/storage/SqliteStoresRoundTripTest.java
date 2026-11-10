@@ -121,16 +121,18 @@ class SqliteStoresRoundTripTest {
         FileMeta stable = new FileMeta(0, Path.of("/tmp/root/stable.bin"), 500,
                 Instant.parse("2026-09-19T00:00:00Z"), null, Category.OTHER);
         FileMeta inserted = files.insertAll(scanId, List.of(stable)).getFirst();
+        // 查找键用与存储一致的 Path 字符串（Windows 下分隔符是 \，macOS/Linux 是 /）
+        String lookupPath = Path.of("/tmp/root/stable.bin").toString();
         // 未算过全量哈希时不可复用
-        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 500,
+        assertThat(files.findReusableContentHash(lookupPath, 500,
                 Instant.parse("2026-09-19T00:00:00Z"))).isEmpty();
         files.updateContentHash(inserted.id(), "abc123");
         // path+size+mtime 全部一致才复用
-        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 500,
+        assertThat(files.findReusableContentHash(lookupPath, 500,
                 Instant.parse("2026-09-19T00:00:00Z"))).contains("abc123");
-        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 501,
+        assertThat(files.findReusableContentHash(lookupPath, 501,
                 Instant.parse("2026-09-19T00:00:00Z"))).isEmpty();
-        assertThat(files.findReusableContentHash("/tmp/root/stable.bin", 500,
+        assertThat(files.findReusableContentHash(lookupPath, 500,
                 Instant.parse("2026-09-20T00:00:00Z"))).isEmpty();
     }
 }

@@ -3,7 +3,10 @@ package com.fileark.storage;
 import com.fileark.core.port.QuarantineStore;
 import com.fileark.core.quarantine.QuarantineItem;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +26,7 @@ public final class SqliteQuarantineStore implements QuarantineStore {
              var ps = conn.prepareStatement(
                      "INSERT INTO quarantine_item(original_path, quarantine_path, size, hash, " +
                              "quarantined_at, purge_after) VALUES (?, ?, ?, ?, ?, ?)",
-                     java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                     Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, item.originalPath());
             ps.setString(2, item.quarantinePath());
             ps.setLong(3, item.size());
@@ -76,7 +79,7 @@ public final class SqliteQuarantineStore implements QuarantineStore {
     }
 
     private interface Binder {
-        void bind(java.sql.PreparedStatement ps) throws SQLException;
+        void bind(PreparedStatement ps) throws SQLException;
     }
 
     @Override
@@ -99,7 +102,7 @@ public final class SqliteQuarantineStore implements QuarantineStore {
         }
     }
 
-    private static QuarantineItem map(java.sql.ResultSet rs) throws SQLException {
+    private static QuarantineItem map(ResultSet rs) throws SQLException {
         return new QuarantineItem(rs.getLong("id"), rs.getString("original_path"),
                 rs.getString("quarantine_path"), rs.getLong("size"), rs.getString("hash"),
                 Instant.parse(rs.getString("quarantined_at")), Instant.parse(rs.getString("purge_after")),

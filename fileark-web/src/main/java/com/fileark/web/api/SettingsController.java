@@ -1,7 +1,9 @@
 package com.fileark.web.api;
 
 import com.fileark.core.port.SettingsStore;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +29,12 @@ public class SettingsController {
     @PutMapping
     public Map<String, String> put(@RequestBody Map<String, String> kv) {
         kv.forEach(settings::put);
+        return settings.all();
+    }
+
+    @DeleteMapping("/{key}")
+    public Map<String, String> delete(@PathVariable String key) {
+        settings.remove(key);
         return settings.all();
     }
 }

@@ -14,12 +14,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 目录实时监控（F6）：WatchService 递归注册 + 事件防抖 + 稳定性检查。
  * 事件在内部守护线程串行消费，回调 onNewFile 也在该线程执行——
  * 消费方无需再做并发控制，但回调必须快（本项目的回调即「生成并执行自动计划」）。
  */
 public final class DirectoryWatcher implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(DirectoryWatcher.class);
 
     private final Path dir;
     private final long debounceMillis;
@@ -105,8 +110,8 @@ public final class DirectoryWatcher implements AutoCloseable {
                 } else if (Files.isRegularFile(child)) {
                     lastEventAt.put(child, System.currentTimeMillis());
                 }
-            } catch (IOException ignored) {
-                // 子目录注册失败：跳过该子树
+            } catch (IOException e) {
+                log.debug("子目录注册失败，跳过该子树: {}", child, e);
             }
         }
         if (!key.reset()) {
@@ -126,7 +131,7 @@ public final class DirectoryWatcher implements AutoCloseable {
                 try {
                     onNewFile.accept(file);
                 } catch (RuntimeException e) {
-                    // 单个文件的自动整理失败不终止监控
+                    log.warn("单个文件的自动整理失败，不终止监控: {}", file, e);
                 }
             }
             return true;
@@ -136,7 +141,8 @@ public final class DirectoryWatcher implements AutoCloseable {
     private void closeQuietly() {
         try {
             watchService.close();
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            log.debug("关闭 WatchService 失败", e);
         }
     }
 

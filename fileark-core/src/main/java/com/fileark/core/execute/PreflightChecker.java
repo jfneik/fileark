@@ -3,12 +3,16 @@ package com.fileark.core.execute;
 import com.fileark.core.exception.ErrorCode;
 import com.fileark.core.plan.Operation;
 
+import com.fileark.core.plan.OperationType;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * 执行前预检：目标冲突、源变更、空间不足、路径非法。
@@ -28,7 +32,7 @@ public final class PreflightChecker {
         // 计划内目标冲突：预检只看磁盘快照，同一计划内两条操作可能指向同一目标
         // （如同名文件移入同一新目录）。后到的操作会被先行操作占住目标，
         // 而 ATOMIC_MOVE 在 Unix 上会静默替换目标文件——必须在此拦截。
-        java.util.Set<String> seenDst = new java.util.HashSet<>();
+        Set<String> seenDst = new HashSet<>();
         for (Operation op : ops) {
             if (op.dst() == null) {
                 continue;
@@ -61,7 +65,7 @@ public final class PreflightChecker {
                         "无法读取源文件状态: " + op.src() + " (" + e.getMessage() + ")"));
                 continue;
             }
-            if (op.type() == com.fileark.core.plan.OperationType.MOVE && op.dst() != null) {
+            if (op.type() == OperationType.MOVE && op.dst() != null) {
                 bytesToMove += op.expectedSize();
             }
         }
@@ -91,7 +95,7 @@ public final class PreflightChecker {
     }
 
     private Path firstDstRoot(List<Operation> ops) {
-        return ops.stream().map(Operation::dst).filter(java.util.Objects::nonNull)
+        return ops.stream().map(Operation::dst).filter(Objects::nonNull)
                 .findFirst().map(java.nio.file.Path::getRoot).orElse(null);
     }
 

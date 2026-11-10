@@ -2,11 +2,15 @@ package com.fileark.core.orchestrator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fileark.core.dedup.DuplicateDetector;
+import com.fileark.core.exception.ErrorCode;
 import com.fileark.core.exception.FileArkException;
+import com.fileark.core.hash.FileHasher;
 import com.fileark.core.model.FileMeta;
 import com.fileark.core.port.DuplicateStore;
 import com.fileark.core.port.FileRepository;
 import com.fileark.core.port.ScanStore;
+import com.fileark.core.port.SettingsStore;
+import com.fileark.core.scan.Exclusions;
 import com.fileark.core.scan.FileScanner;
 import com.fileark.core.scan.ScanListener;
 import com.fileark.core.scan.ScanStatus;
@@ -15,9 +19,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
@@ -36,12 +42,12 @@ public final class ScanOrchestrator {
     private final DuplicateDetector detector;
     private final ExecutorService hashPool;
     private final int hashConcurrency;
-    private final com.fileark.core.port.SettingsStore settingsStore;
+    private final SettingsStore settingsStore;
 
     public ScanOrchestrator(ScanStore scanStore, FileRepository fileRepository,
                             DuplicateStore duplicateStore, DuplicateDetector detector,
                             ExecutorService hashPool, int hashConcurrency,
-                            com.fileark.core.port.SettingsStore settingsStore) {
+                            SettingsStore settingsStore) {
         this.scanStore = scanStore;
         this.fileRepository = fileRepository;
         this.duplicateStore = duplicateStore;
@@ -60,15 +66,15 @@ public final class ScanOrchestrator {
             listener.onPhase("SCANNING");
             // 排除目录 = 内置默认 + 用户自定义（settings: scan.excludes，逗号分隔）
             // 这是「受保护目录」机制的落点：被排除的目录永不进入索引，也就永远不会被整理
-            java.util.Set<String> names = new java.util.HashSet<>(
-                    com.fileark.core.scan.Exclusions.defaults().dirNames());
+            Set<String> names = new HashSet<>(
+                    Exclusions.defaults().dirNames());
             String custom = settingsStore.get("scan.excludes").orElse("");
             for (String n : custom.split(",")) {
                 if (!n.isBlank()) {
                     names.add(n.trim());
                 }
             }
-            List<Path> paths = new FileScanner(new com.fileark.core.scan.Exclusions(names))
+            List<Path> paths = new FileScanner(new Exclusions(names))
                     .collect(root, new ScanListener() {
                         @Override
                         public void onProgress(Path current, int count) {
@@ -87,8 +93,8 @@ public final class ScanOrchestrator {
             }
             // 增量扫描（F10）：一次性预取全部已知哈希，按 path|size|mtime 三元组内存匹配。
             // 不逐文件查库——曾因 2 万次「开连接+查询+关连接」让二次扫描比首次还慢一倍。
-            Map<String, String> knownHashes = new java.util.HashMap<>();
-            for (com.fileark.core.port.FileRepository.KnownHash k : fileRepository.allKnownHashes()) {
+            Map<String, String> knownHashes = new HashMap<>();
+            for (FileRepository.KnownHash k : fileRepository.allKnownHashes()) {
                 knownHashes.put(k.tripleKey(), k.hash());
             }
             metas = fileRepository.insertAll(scanId, metas);
@@ -142,7 +148,7 @@ public final class ScanOrchestrator {
                     stats(metas.size(), confirmedGroups, reclaimable, reused.get()));
             listener.onPhase("DONE");
         } catch (FileArkException e) {
-            if (e.code() == com.fileark.core.exception.ErrorCode.SCAN_CANCELLED) {
+            if (e.code() == ErrorCode.SCAN_CANCELLED) {
                 scanStore.updateStatus(scanId, ScanStatus.CANCELLED, null);
                 listener.onPhase("CANCELLED");
             } else {
@@ -172,7 +178,7 @@ public final class ScanOrchestrator {
                 }
                 permits.acquire();
                 try {
-                    return com.fileark.core.hash.FileHasher.fullSha256(m.path());
+                    return FileHasher.fullSha256(m.path());
                 } finally {
                     permits.release();
                 }
@@ -184,7 +190,7 @@ public final class ScanOrchestrator {
                 byDigest.computeIfAbsent(futures.get(i).get(), k -> new ArrayList<>())
                         .add(group.members().get(i));
             } catch (Exception e) {
-                throw new FileArkException(com.fileark.core.exception.ErrorCode.IO_ERROR,
+                throw new FileArkException(ErrorCode.IO_ERROR,
                         "哈希任务失败: " + group.members().get(i).path(), e.getMessage());
             }
         }

@@ -17,16 +17,28 @@ const statusType = (s: string) =>
           : s === 'EXECUTING' ? 'primary' : 'info'
 
 async function refresh() {
-  plans.value = (await api.plans()).data
+  try {
+    plans.value = (await api.plans()).data
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function openDetail(row: PlanRow) {
-  detail.value = (await api.plan(row.id)).data
-  detailVisible.value = true
+  try {
+    detail.value = (await api.plan(row.id)).data
+    detailVisible.value = true
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function execute(row: PlanRow) {
-  await ElMessageBox.confirm(`执行计划 #${row.id}？执行中失败会自动回滚。`, '确认执行', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`执行计划 #${row.id}？执行中失败会自动回滚。`, '确认执行', { type: 'warning' })
+  } catch {
+    return // 用户点取消：confirm 的 reject 不是错误，静默返回即可
+  }
   try {
     const { data } = await api.execute(row.id)
     ElMessage.success(`执行完成: ${data.status}`)
@@ -37,7 +49,11 @@ async function execute(row: PlanRow) {
 }
 
 async function rollback(row: PlanRow) {
-  await ElMessageBox.confirm(`撤销计划 #${row.id}？文件将恢复到执行前状态。`, '确认撤销', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`撤销计划 #${row.id}？文件将恢复到执行前状态。`, '确认撤销', { type: 'warning' })
+  } catch {
+    return // 用户点取消
+  }
   try {
     const { data } = await api.rollback(row.id)
     ElMessage.success(`撤销完成: ${data.status}`)
@@ -49,9 +65,13 @@ async function rollback(row: PlanRow) {
 
 /** NEEDS_REVIEW 的人工闭环：核对完矛盾条目后标记，转终态 ACKNOWLEDGED。 */
 async function ackReview(row: PlanRow) {
-  await ElMessageBox.confirm(
-    '标记「已人工复核」表示你已核对详情中的矛盾条目并妥善处理，此后该计划不再提醒。确认？',
-    '标记已复核', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(
+      '标记「已人工复核」表示你已核对详情中的矛盾条目并妥善处理，此后该计划不再提醒。确认？',
+      '标记已复核', { type: 'warning' })
+  } catch {
+    return // 用户点取消
+  }
   try {
     await api.ackReview(row.id)
     ElMessage.success(`计划 #${row.id} 已标记复核完成`)
@@ -62,6 +82,8 @@ async function ackReview(row: PlanRow) {
 }
 
 refresh()
+
+defineExpose({ refresh })
 </script>
 
 <template>
@@ -99,7 +121,7 @@ refresh()
               title="存在 NEEDS_REVIEW 计划：崩溃恢复时发现与磁盘状态矛盾的条目，请打开详情人工核对，处理后点「标记已复核」闭环"
               type="error" :closable="false" style="margin-top: 12px" />
 
-    <el-dialog v-model="detailVisible" :title="`计划 #${detail?.id}`" width="820px">
+    <el-dialog v-model="detailVisible" :title="`计划 #${detail?.id}`" width="min(820px, 94vw)">
       <p>{{ detail?.description }}</p>
       <el-alert v-if="detail?.error" :title="detail?.error" type="error" :closable="false" />
       <el-table :data="detail?.operations ?? []" size="small" max-height="420">

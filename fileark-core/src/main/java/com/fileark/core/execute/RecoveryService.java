@@ -15,6 +15,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 崩溃恢复：启动时发现 EXECUTING 状态的计划，按撤销日志重放回滚。
@@ -54,7 +55,7 @@ public final class RecoveryService {
             if (row.status() == ScanStatus.RUNNING) {
                 try {
                     scanStore.updateStatus(row.id(), ScanStatus.FAILED,
-                            JSON.writeValueAsString(java.util.Map.of("error", "进程中断：上次运行未完成")));
+                            JSON.writeValueAsString(Map.of("error", "进程中断：上次运行未完成")));
                     fixed++;
                 } catch (java.io.IOException ignored) {
                     scanStore.updateStatus(row.id(), ScanStatus.FAILED, null);
@@ -69,8 +70,7 @@ public final class RecoveryService {
         List<Operation> ops = planStore.operationsOf(row.id());
         Deque<Operation> rollbackable = new ArrayDeque<>();
         boolean contradiction = false;
-        for (int i = ops.size() - 1; i >= 0; i--) {
-            Operation op = ops.get(i);
+        for (Operation op : ops) {
             switch (op.status()) {
                 case DONE -> {
                     if (hasUndoAndConsistent(row.id(), op)) {

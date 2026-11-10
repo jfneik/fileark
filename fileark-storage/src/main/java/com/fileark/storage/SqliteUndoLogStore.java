@@ -4,6 +4,8 @@ import com.fileark.core.execute.UndoKind;
 import com.fileark.core.execute.UndoRecord;
 import com.fileark.core.port.UndoLogStore;
 
+import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,7 +27,7 @@ public final class SqliteUndoLogStore implements UndoLogStore {
             ps.setLong(2, operationId);
             ps.setString(3, kind.name());
             ps.setString(4, payloadJson);
-            ps.setString(5, java.time.Instant.now().toString());
+            ps.setString(5, Instant.now().toString());
             ps.executeUpdate();
         } catch (Exception e) {
             throw new IllegalStateException(e);
@@ -61,7 +63,7 @@ public final class SqliteUndoLogStore implements UndoLogStore {
     }
 
     private interface Binder {
-        void bind(java.sql.PreparedStatement ps) throws Exception;
+        void bind(PreparedStatement ps) throws Exception;
     }
 
     private List<UndoRecord> query(String sql, Binder binder) {

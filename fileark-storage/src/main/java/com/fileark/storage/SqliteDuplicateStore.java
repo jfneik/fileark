@@ -1,10 +1,13 @@
 package com.fileark.storage;
 
+import com.fileark.core.model.Category;
 import com.fileark.core.model.FileMeta;
 import com.fileark.core.port.DuplicateStore;
 
 import java.nio.file.Path;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,7 +30,7 @@ public final class SqliteDuplicateStore implements DuplicateStore {
                 try (var ps = conn.prepareStatement(
                         "INSERT INTO duplicate_group(scan_id, hash, status, file_count, total_size) " +
                                 "VALUES (?, ?, ?, 0, 0)",
-                        java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                        Statement.RETURN_GENERATED_KEYS)) {
                     ps.setLong(1, scanId);
                     ps.setString(2, hash);
                     ps.setString(3, status.name());
@@ -120,7 +123,7 @@ public final class SqliteDuplicateStore implements DuplicateStore {
                     while (rms.next()) {
                         members.add(new FileMeta(rms.getLong("id"), Path.of(rms.getString("path")),
                                 rms.getLong("size"), Instant.parse(rms.getString("mtime")),
-                                rms.getString("mime_type"), com.fileark.core.model.Category.valueOf(rms.getString("category"))));
+                                rms.getString("mime_type"), Category.valueOf(rms.getString("category"))));
                     }
                 }
                 return Optional.of(new GroupView(groupId, hash, status, totalSize, members));
@@ -131,7 +134,7 @@ public final class SqliteDuplicateStore implements DuplicateStore {
     }
 
     private interface Binder {
-        void bind(java.sql.PreparedStatement ps) throws SQLException;
+        void bind(PreparedStatement ps) throws SQLException;
     }
 
     private void exec(String sql, Binder binder) {

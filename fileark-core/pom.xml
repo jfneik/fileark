@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.fileark</groupId>
         <artifactId>fileark-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>1.2.0</version>
     </parent>
 
     <artifactId>fileark-core</artifactId>
@@ -22,6 +22,11 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- 日志仅用 API,实现绑定由 web 模块提供;ArchUnit 规则仍禁止 Spring/jakarta -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
         <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>

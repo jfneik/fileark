@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errText } from '../api'
 
 const rows = ref<{ key: string; value: string }[]>([])
@@ -8,8 +8,12 @@ const newKey = ref('')
 const newValue = ref('')
 
 async function refresh() {
-  const all = (await api.settings()).data
-  rows.value = Object.entries(all).map(([key, value]) => ({ key, value }))
+  try {
+    const all = (await api.settings()).data
+    rows.value = Object.entries(all).map(([key, value]) => ({ key, value }))
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function save() {
@@ -31,7 +35,25 @@ function add() {
   newValue.value = ''
 }
 
+/** 真删除：调用后端 DELETE /settings/{key}，刷新后不会复活。 */
+async function removeRow(row: { key: string; value: string }) {
+  try {
+    await ElMessageBox.confirm(`删除设置项「${row.key}」？运行时将回退到 application.yml 的默认值。`, '删除设置', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await api.deleteSetting(row.key)
+    ElMessage.success('已删除')
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
+  await refresh()
+}
+
 refresh()
+
+defineExpose({ refresh })
 </script>
 
 <template>
@@ -48,8 +70,8 @@ refresh()
         </template>
       </el-table-column>
       <el-table-column label="操作" width="90">
-        <template #default="{ $index }">
-          <el-button size="small" type="danger" text @click="rows.splice($index, 1)">删</el-button>
+        <template #default="{ row }">
+          <el-button size="small" type="danger" text @click="removeRow(row)">删</el-button>
         </template>
       </el-table-column>
     </el-table>

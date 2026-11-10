@@ -3,7 +3,7 @@ import type {
   CreatePlanRequest, Dashboard, DuplicateGroup, FileEntry, Plan, PlanRow, QuarantineItem, Rule, ScanRow, WatchStatus
 } from './types'
 
-const http = axios.create({ baseURL: '/api' })
+const http = axios.create({ baseURL: '/api', timeout: 30000 })
 
 // 统一取后端错误体 {code, message, detail}
 export function errText(e: unknown): string {
@@ -15,7 +15,6 @@ export const api = {
   // 扫描
   createScan: (rootPath: string) => http.post<{ scanId: number }>('/scans', { rootPath }),
   listScans: () => http.get<ScanRow[]>('/scans'),
-  getScan: (id: number) => http.get<ScanRow>(`/scans/${id}`),
   cancelScan: (id: number) => http.post(`/scans/${id}/cancel`),
   duplicates: (id: number, status?: string) =>
     http.get<DuplicateGroup[]>(`/scans/${id}/duplicates`, { params: status ? { status } : {} }),
@@ -42,6 +41,7 @@ export const api = {
   purgeExpired: () => http.post('/quarantine/purge-expired', null, { params: { confirm: true } }),
   settings: () => http.get<Record<string, string>>('/settings'),
   saveSettings: (kv: Record<string, string>) => http.put<Record<string, string>>('/settings', kv),
+  deleteSetting: (key: string) => http.delete<Record<string, string>>(`/settings/${encodeURIComponent(key)}`),
 
   // 相似图片与缩略图
   similar: (scanId: number, threshold: number) =>

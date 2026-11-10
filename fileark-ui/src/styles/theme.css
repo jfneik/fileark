@@ -1,0 +1,272 @@
+/* ============================================================
+ * FileArk 主题层：品牌变量 + Element Plus 重定义 + 全局质感
+ * 单一数据源：改品牌色只动这里的 --ark-* 与 --el-color-primary 系
+ * ============================================================ */
+
+:root {
+  /* ---- 品牌：方舟蓝 ---- */
+  --ark-primary: #4c6ef5;
+  --ark-primary-grad: linear-gradient(135deg, #6c8cff 0%, #4c6ef5 60%, #3b5bdb 100%);
+
+  /* ---- 中性色 ---- */
+  --ark-bg: #f5f6fa;
+  --ark-surface: #ffffff;
+  --ark-border: #e6e8f0;
+  --ark-ink: #1f2437;
+  --ark-text-2: #5c637a;
+  --ark-text-3: #9aa1b5;
+
+  --ark-shadow-sm: 0 1px 2px rgba(31, 36, 55, 0.06), 0 2px 8px rgba(31, 36, 55, 0.05);
+  --ark-shadow-md: 0 2px 6px rgba(31, 36, 55, 0.06), 0 12px 32px rgba(31, 36, 55, 0.1);
+  --ark-radius: 12px;
+
+  /* ---- Element Plus 变量重定义 ---- */
+  --el-color-primary: #4c6ef5;
+  --el-color-primary-light-3: #7b93f8;
+  --el-color-primary-light-5: #a5b7fa;
+  --el-color-primary-light-7: #cfdbfd;
+  --el-color-primary-light-8: #e2e9fe;
+  --el-color-primary-light-9: #f0f4ff;
+  --el-color-primary-dark-2: #3b5bdb;
+  --el-border-radius-base: 8px;
+  --el-font-family: 'Inter', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --el-box-shadow-light: var(--ark-shadow-sm);
+}
+
+html,
+body {
+  background: var(--ark-bg);
+  color: var(--ark-ink);
+  font-family: var(--el-font-family);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(76, 110, 245, 0.22);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cdd3e1;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ark-text-3);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------- 吸顶品牌导航（毛玻璃） ---------------- */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid var(--ark-border);
+}
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  box-shadow: 0 6px 16px rgba(76, 110, 245, 0.35);
+}
+.brand-text h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--ark-ink);
+  white-space: nowrap;
+}
+.brand-text h1 em {
+  font-style: normal;
+  background: var(--ark-primary-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.brand-text p {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: var(--ark-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-chip {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ark-primary);
+  background: rgba(76, 110, 245, 0.08);
+  border: 1px solid rgba(76, 110, 245, 0.25);
+}
+
+/* ---------------- 胶囊 Tab + 卡片化面板 ---------------- */
+.app-tabs.el-tabs > .el-tabs__header {
+  margin-bottom: 16px;
+  background: var(--ark-surface);
+  border: 1px solid var(--ark-border);
+  border-radius: 999px;
+  padding: 5px;
+  display: inline-flex;
+  justify-content: flex-start;
+  width: fit-content;
+  box-shadow: var(--ark-shadow-sm);
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.app-tabs.el-tabs > .el-tabs__header::-webkit-scrollbar {
+  display: none;
+}
+.app-tabs .el-tabs__nav-wrap::after {
+  display: none;
+}
+.app-tabs .el-tabs__nav {
+  border: none;
+  gap: 2px;
+}
+.app-tabs .el-tabs__item {
+  height: 36px;
+  line-height: 36px;
+  padding: 0 18px;
+  border-radius: 999px;
+  color: var(--ark-text-2);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: color 0.15s, background-color 0.15s;
+}
+.app-tabs .el-tabs__item:hover {
+  color: var(--ark-primary);
+  background: var(--el-color-primary-light-9);
+}
+.app-tabs .el-tabs__item.is-active {
+  color: #fff;
+  background: var(--ark-primary-grad);
+  box-shadow: 0 4px 12px rgba(76, 110, 245, 0.35);
+}
+.app-tabs .el-tabs__active-bar {
+  display: none;
+}
+.app-tabs .el-tabs__content {
+  overflow: visible;
+}
+.app-tabs .el-tab-pane {
+  background: var(--ark-surface);
+  border: 1px solid var(--ark-border);
+  border-radius: var(--ark-radius);
+  padding: 16px 18px;
+  box-shadow: var(--ark-shadow-sm);
+}
+
+/* ---------------- 表格质感 ---------------- */
+.el-table {
+  --el-table-header-bg-color: #f8f9fd;
+  --el-table-header-text-color: var(--ark-text-2);
+  --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+  --el-table-border-color: var(--ark-border);
+  border-radius: 10px;
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+}
+
+/* ---------------- 仪表盘统计卡 ---------------- */
+.stat-card {
+  border-radius: var(--ark-radius);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--ark-shadow-md);
+}
+.stat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ark-text-2);
+  margin-bottom: 10px;
+}
+.stat-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.stat-icon.blue {
+  background: rgba(76, 110, 245, 0.1);
+  border: 1px solid rgba(76, 110, 245, 0.25);
+}
+.stat-icon.rose {
+  background: rgba(235, 87, 87, 0.09);
+  border: 1px solid rgba(235, 87, 87, 0.25);
+}
+.stat-icon.green {
+  background: rgba(18, 183, 106, 0.1);
+  border: 1px solid rgba(18, 183, 106, 0.28);
+}
+.stat-icon.violet {
+  background: rgba(124, 77, 255, 0.09);
+  border: 1px solid rgba(124, 77, 255, 0.25);
+}
+.stat-num .el-statistic__number {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+/* ---------------- 弹层圆角 ---------------- */
+.el-dialog {
+  border-radius: 14px !important;
+}
+.el-message-box {
+  border-radius: 12px !important;
+}
+
+/* ---------------- 动效无障碍 ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

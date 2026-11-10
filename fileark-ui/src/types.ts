@@ -4,7 +4,7 @@ export interface FileEntry {
   id: number
   path: string
   size: number
-  mtime: string
+  mtime: string | null
   mimeType: string | null
   category: string | null
 }
@@ -51,7 +51,7 @@ export interface Operation {
 
 export interface Plan {
   id: number
-  status: 'PLANNED' | 'EXECUTING' | 'EXECUTED' | 'FAILED' | 'ROLLED_BACK' | 'NEEDS_REVIEW'
+  status: 'PLANNED' | 'EXECUTING' | 'EXECUTED' | 'FAILED' | 'ROLLED_BACK' | 'NEEDS_REVIEW' | 'ACKNOWLEDGED'
   description: string | null
   error: string | null
   operations: Operation[]
@@ -88,7 +88,7 @@ export interface QuarantineItem {
 }
 
 export interface CreatePlanRequest {
-  kind: 'DUPLICATE_CLEANUP' | 'RULE_APPLY'
+  kind: 'DUPLICATE_CLEANUP' | 'DUPLICATE_CLEANUP_ALL' | 'RULE_APPLY'
   refId: number
   keepStrategy?: 'NEWEST' | 'OLDEST' | 'FIRST_PATH'
   targetDir?: string

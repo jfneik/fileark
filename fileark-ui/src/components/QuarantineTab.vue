@@ -14,11 +14,19 @@ function daysLeft(item: QuarantineItem): number {
 const expiredCount = computed(() => items.value.filter(i => daysLeft(i) <= 0).length)
 
 async function refresh() {
-  items.value = (await api.quarantine()).data
+  try {
+    items.value = (await api.quarantine()).data
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function restore(item: QuarantineItem) {
-  await ElMessageBox.confirm(`恢复到原路径：${item.originalPath}？`, '恢复', { type: 'info' })
+  try {
+    await ElMessageBox.confirm(`恢复到原路径：${item.originalPath}？`, '恢复', { type: 'info' })
+  } catch {
+    return
+  }
   try {
     await api.restore(item.id)
     ElMessage.success('已恢复')
@@ -29,8 +37,12 @@ async function restore(item: QuarantineItem) {
 }
 
 async function purge(item: QuarantineItem) {
-  await ElMessageBox.confirm(`彻底删除「${item.originalPath}」？此操作不可撤销！`, '危险操作', { type: 'error' })
-  await ElMessageBox.confirm('再次确认：文件将从磁盘永久删除。', '二次确认', { type: 'error' })
+  try {
+    await ElMessageBox.confirm(`彻底删除「${item.originalPath}」？此操作不可撤销！`, '危险操作', { type: 'error' })
+    await ElMessageBox.confirm('再次确认：文件将从磁盘永久删除。', '二次确认', { type: 'error' })
+  } catch {
+    return
+  }
   try {
     await api.purge(item.id)
     ElMessage.success('已彻底删除')
@@ -42,9 +54,13 @@ async function purge(item: QuarantineItem) {
 
 /** 一键清除全部已到期条目（保留期 30 天，到期文件占着空间没有恢复价值时清理）。 */
 async function purgeExpired() {
-  await ElMessageBox.confirm(
-    `将物理删除全部 ${expiredCount.value} 个已到期文件，不可恢复。确认？`,
-    '清除已到期', { type: 'error' })
+  try {
+    await ElMessageBox.confirm(
+      `将物理删除全部 ${expiredCount.value} 个已到期文件，不可恢复。确认？`,
+      '清除已到期', { type: 'error' })
+  } catch {
+    return
+  }
   try {
     const { data } = await api.purgeExpired()
     ElMessage.success(`已清除 ${data.purged} 个到期文件`)
@@ -55,6 +71,8 @@ async function purgeExpired() {
 }
 
 refresh()
+
+defineExpose({ refresh })
 </script>
 
 <template>

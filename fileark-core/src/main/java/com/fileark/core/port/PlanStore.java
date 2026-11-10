@@ -22,6 +22,9 @@ public interface PlanStore {
 
     void updatePlanStatus(long planId, PlanStatus status, String error);
 
+    /** 条件状态迁移（CAS）：仅当当前状态为 expectedFrom 时更新为 to，返回是否抢占成功。 */
+    boolean tryUpdatePlanStatus(long planId, PlanStatus expectedFrom, PlanStatus to, String error);
+
     void updateOperationStatus(long planId, long operationId, OperationStatus status, String error);
 
     record PlanRow(long id, PlanStatus status, String description, String error,

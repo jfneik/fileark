@@ -8,15 +8,25 @@ import com.fileark.core.plan.OperationStatus;
 import com.fileark.core.plan.OperationType;
 import com.fileark.core.plan.Plan;
 import com.fileark.core.plan.PlanStatus;
+import com.fileark.core.port.PlanStore;
+import com.fileark.core.port.QuarantineStore;
+import com.fileark.core.port.UndoLogStore;
+import com.fileark.core.quarantine.QuarantineItem;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 事务式文件操作执行器——本项目核心。
@@ -25,24 +35,27 @@ import java.util.UUID;
  */
 public final class TransactionalExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(TransactionalExecutor.class);
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private final com.fileark.core.port.PlanStore planStore;
-    private final com.fileark.core.port.UndoLogStore undoLogStore;
-    private final com.fileark.core.port.QuarantineStore quarantineStore;
+    private final PlanStore planStore;
+    private final UndoLogStore undoLogStore;
+    private final QuarantineStore quarantineStore;
     private final FileOps fileOps;
     private final PreflightChecker preflight;
     private final Path quarantineDir;
-    private final java.time.Clock clock;
+    private final Clock clock;
     private final long retentionDays;
+    /** 计划级锁：撤销操作按 planId 串行化，防止并发双击导致重复回滚。 */
+    private final Map<Long, Object> planLocks = new ConcurrentHashMap<>();
 
-    public TransactionalExecutor(com.fileark.core.port.PlanStore planStore,
-                                 com.fileark.core.port.UndoLogStore undoLogStore,
-                                 com.fileark.core.port.QuarantineStore quarantineStore,
+    public TransactionalExecutor(PlanStore planStore,
+                                 UndoLogStore undoLogStore,
+                                 QuarantineStore quarantineStore,
                                  FileOps fileOps,
                                  PreflightChecker preflight,
                                  Path quarantineDir,
-                                 java.time.Clock clock,
+                                 Clock clock,
                                  long retentionDays) {
         this.planStore = planStore;
         this.undoLogStore = undoLogStore;
@@ -60,6 +73,10 @@ public final class TransactionalExecutor {
             throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE,
                     "计划不可执行，当前状态: " + plan.status());
         }
+        // 状态迁移用 CAS 抢占：并发重复提交时仅一个请求能把 PLANNED 迁移为 EXECUTING
+        if (!planStore.tryUpdatePlanStatus(planId, PlanStatus.PLANNED, PlanStatus.EXECUTING, null)) {
+            throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE, "计划正在执行中，请勿重复提交");
+        }
         List<Operation> ops = planStore.operationsOf(planId);
         Map<Long, PreflightIssue> issues = preflight.check(ops);
         for (Operation op : ops) {
@@ -75,7 +92,6 @@ public final class TransactionalExecutor {
             throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE, "所有操作未通过预检，计划已标记 FAILED");
         }
 
-        planStore.updatePlanStatus(planId, PlanStatus.EXECUTING, null);
         Deque<Operation> done = new ArrayDeque<>();
         try {
             for (Operation op : executable) {
@@ -110,6 +126,13 @@ public final class TransactionalExecutor {
 
     /** 用户主动撤销：仅 EXECUTED 状态可撤销，逆序回滚全部 DONE 操作。 */
     public Plan rollback(long planId) {
+        // 计划级锁：并发双击撤销时串行化，防止同一批 DONE 操作被重复回滚
+        synchronized (planLocks.computeIfAbsent(planId, k -> new Object())) {
+            return doRollback(planId);
+        }
+    }
+
+    private Plan doRollback(long planId) {
         Plan plan = loadPlan(planId);
         if (plan.status() != PlanStatus.EXECUTED) {
             throw new FileArkException(ErrorCode.PLAN_NOT_EXECUTABLE,
@@ -131,7 +154,7 @@ public final class TransactionalExecutor {
 
     /** 端口返回行记录，领域层用它重组完整的 Plan 聚合。 */
     private Plan loadPlan(long planId) {
-        com.fileark.core.port.PlanStore.PlanRow row = planStore.findPlan(planId)
+        PlanStore.PlanRow row = planStore.findPlan(planId)
                 .orElseThrow(() -> new FileArkException(ErrorCode.INVALID_REQUEST, "计划不存在: " + planId));
         return new Plan(row.id(), row.status(), row.description(), row.error(),
                 planStore.operationsOf(planId));
@@ -190,8 +213,9 @@ public final class TransactionalExecutor {
                 }
             }
             undoLogStore.markApplied(planId, failed.id());
-        } catch (IOException ignored) {
-            // 收尾失败不影响主流程：撤销日志保留待人工核对
+        } catch (IOException e) {
+            // 收尾失败不影响主流程：撤销日志保留待人工核对，但必须留痕
+            log.warn("失败条目收尾未完成 planId={}，撤销日志保留待人工核对", planId, e);
         }
     }
 
@@ -225,11 +249,11 @@ public final class TransactionalExecutor {
                 fileOps.mkdirs(quarantineDir);
                 fileOps.move(op.src(), quarantineTarget);
                 // 安全区登记：让隔离文件出现在安全区列表，可恢复、到期可清除
-                quarantineStore.insert(new com.fileark.core.quarantine.QuarantineItem(
+                quarantineStore.insert(new QuarantineItem(
                         0, op.src().toString(), quarantineTarget.toString(),
                         op.expectedSize(), null,
-                        java.time.Instant.now(clock),
-                        java.time.Instant.now(clock).plus(java.time.Duration.ofDays(retentionDays)),
+                        Instant.now(clock),
+                        Instant.now(clock).plus(Duration.ofDays(retentionDays)),
                         false));
             }
         }

@@ -10,5 +10,7 @@ public interface SettingsStore {
 
     void put(String key, String value);
 
+    void remove(String key);
+
     Map<String, String> all();
 }

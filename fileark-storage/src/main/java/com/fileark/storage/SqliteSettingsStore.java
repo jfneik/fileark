@@ -42,6 +42,17 @@ public final class SqliteSettingsStore implements SettingsStore {
     }
 
     @Override
+    public void remove(String key) {
+        try (var conn = db.open();
+             var ps = conn.prepareStatement("DELETE FROM setting WHERE key = ?")) {
+            ps.setString(1, key);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Override
     public Map<String, String> all() {
         try (var conn = db.open();
              var rs = conn.createStatement().executeQuery("SELECT key, value FROM setting ORDER BY key")) {

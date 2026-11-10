@@ -6,7 +6,7 @@
 
     <groupId>com.fileark</groupId>
     <artifactId>fileark-parent</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.2.0</version>
     <packaging>pom</packaging>
     <name>FileArk Parent</name>
     <description>本地文件智能整理与去重引擎</description>

@@ -86,7 +86,8 @@ class RuleEngineTest {
     void pathTemplateRendersTimeAndCategory() {
         FileMeta f = file("report.pdf", Category.DOCUMENT, 10, NOW);
         Path dir = PathTemplate.renderDir("{type}/{yyyy}/{MM}", Path.of("/base"), f, CLOCK);
-        assertThat(dir.toString()).isEqualTo("/base/document/2026/09");
+        // 用 Path 比较而非字符串：Windows 下分隔符是 \，macOS/Linux 是 /
+        assertThat(dir).isEqualTo(Path.of("/base/document/2026/09"));
     }
 
     @Test

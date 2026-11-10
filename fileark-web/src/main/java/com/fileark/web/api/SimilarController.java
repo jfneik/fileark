@@ -34,7 +34,7 @@ public class SimilarController {
     }
 
     @GetMapping
-    public List<List<Dto.FileEntryDto>> similar(@PathVariable long id,
+    public List<List<FileEntryDto>> similar(@PathVariable long id,
                                                 @RequestParam(defaultValue = "10") int threshold) {
         scanStore.find(id).orElseThrow(() ->
                 new FileArkException(ErrorCode.INVALID_REQUEST, "扫描不存在: " + id));
@@ -50,7 +50,7 @@ public class SimilarController {
             }
         }
         return grouper.group(hashes, threshold).stream()
-                .map(group -> group.stream().map(Dto.FileEntryDto::of).toList())
+                .map(group -> group.stream().map(FileEntryDto::of).toList())
                 .toList();
     }
 }

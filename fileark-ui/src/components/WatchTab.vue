@@ -9,9 +9,13 @@ const rulesEnabled = ref(false)
 const newDir = ref('')
 
 async function refresh() {
-  const { data } = await api.watchStatus()
-  dirs.value = data.active
-  rulesEnabled.value = data.rulesEnabled
+  try {
+    const { data } = await api.watchStatus()
+    dirs.value = data.active
+    rulesEnabled.value = data.rulesEnabled
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function start() {
@@ -30,7 +34,11 @@ async function start() {
 }
 
 async function stop(item: WatchStatus) {
-  await ElMessageBox.confirm(`停止监控 ${item.dir}？已产生的操作不受影响。`, '停止监控')
+  try {
+    await ElMessageBox.confirm(`停止监控 ${item.dir}？已产生的操作不受影响。`, '停止监控')
+  } catch {
+    return
+  }
   try {
     await api.stopWatch(item.dir)
     await refresh()
@@ -40,6 +48,8 @@ async function stop(item: WatchStatus) {
 }
 
 refresh()
+
+defineExpose({ refresh })
 </script>
 
 <template>

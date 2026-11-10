@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errText } from '../api'
-import { fmtSize, fmtTime } from '../utils'
+import { fmtSize, fmtTime, pickKept, KEEP_STRATEGY_LABELS, type KeepStrategy } from '../utils'
 import type { DuplicateGroup, Plan, ScanRow } from '../types'
 
 const rootPath = ref('')
@@ -10,14 +10,21 @@ const scans = ref<ScanRow[]>([])
 const selectedScanId = ref<number>()
 const groups = ref<DuplicateGroup[]>([])
 const progress = ref('')
-const keepChoice = ref<Record<number, number>>({}) // groupId -> 保留的 fileEntryId
+const keepStrategy = ref<KeepStrategy>('NEWEST')
 const preview = ref<Plan | null>(null)
 const previewGroupId = ref<number>()
 const previewVisible = ref(false)
 const quickDirs = ['~/Downloads', '~/Desktop', '~/Documents']
 
+let es: EventSource | null = null
+
 async function refreshScans() {
-  scans.value = (await api.listScans()).data
+  try {
+    scans.value = (await api.listScans()).data
+  } catch (e) {
+    ElMessage.error(errText(e))
+    return
+  }
   if (selectedScanId.value == null && scans.value.length > 0) {
     await selectScan(scans.value[0].id)
   }
@@ -36,37 +43,68 @@ function rescan(row: ScanRow) {
   launchScan(row.rootPath)
 }
 
+async function cancelScan(row: ScanRow) {
+  try {
+    await ElMessageBox.confirm(
+      `取消正在进行的扫描 #${row.id}（${row.rootPath}）？已索引的文件会保留。`, '取消扫描', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await api.cancelScan(row.id)
+    ElMessage.success(`已请求取消扫描 #${row.id}`)
+    await refreshScans()
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
+}
+
 function launchScan(dir: string) {
   api.createScan(dir).then(({ data }) => {
     ElMessage.success(`扫描 #${data.scanId} 已启动`)
-    const es = new EventSource(`/api/scans/${data.scanId}/events`)
-    es.addEventListener('progress', e => {
+    es?.close() // 只保留最新一次扫描的实时进度
+    const source = new EventSource(`/api/scans/${data.scanId}/events`)
+    es = source
+    source.addEventListener('progress', e => {
       const d = JSON.parse(e.data)
       progress.value = `已索引 ${d.count} 个文件（${d.current}）`
     })
-    es.addEventListener('suspected', e => { progress.value += `，疑似重复组 ${e.data} 个` })
-    es.addEventListener('confirmed', e => { progress.value += `，已确认 ${e.data}` })
-    es.addEventListener('phase', e => {
+    source.addEventListener('suspected', e => { progress.value += `，疑似重复组 ${e.data} 个` })
+    source.addEventListener('confirmed', e => { progress.value += `，已确认 ${e.data}` })
+    source.addEventListener('phase', e => {
       if (e.data === 'DONE' || e.data === 'CANCELLED' || e.data === 'FAILED') {
-        es.close()
+        source.close()
+        if (es === source) es = null
         progress.value = e.data === 'DONE' ? '扫描完成' : `扫描结束: ${e.data}`
         refreshScans()
       }
     })
-    es.onerror = () => { es.close(); refreshScans() }
+    // 网络抖动时交给 EventSource 原生重连；浏览器彻底放弃（readyState=CLOSED）才收尾
+    source.onerror = () => {
+      if (source.readyState === EventSource.CLOSED) {
+        if (es === source) es = null
+        refreshScans()
+      }
+    }
   }).catch(e => ElMessage.error(errText(e)))
 }
 
+onUnmounted(() => { es?.close(); es = null })
+
+let selectSeq = 0
+
 async function selectScan(id: number) {
   selectedScanId.value = id
-  const { data } = await api.duplicates(id, 'CONFIRMED')
-  groups.value = data
-  const defaults: Record<number, number> = {}
-  for (const g of data) {
-    const newest = [...g.members].sort((a, b) => b.mtime.localeCompare(a.mtime))[0]
-    if (newest) defaults[g.id] = newest.id
+  const seq = ++selectSeq
+  try {
+    const { data } = await api.duplicates(id, 'CONFIRMED')
+    if (seq === selectSeq) groups.value = data
+  } catch (e) {
+    if (seq === selectSeq) {
+      groups.value = []
+      ElMessage.error(errText(e))
+    }
   }
-  keepChoice.value = defaults
 }
 
 /** 一键清理：本次扫描全部确认重复组合并为一个计划，一次执行、可整体撤销。 */
@@ -78,14 +116,15 @@ async function cleanAll() {
   const total = groups.value.reduce((n, g) => n + g.members.length - 1, 0)
   try {
     await ElMessageBox.confirm(
-      `将为 ${groups.value.length} 个重复组生成一个清理计划：保留每组最新副本，其余 ${total} 个文件移入安全区（可整体撤销）。确认？`,
+      `将为 ${groups.value.length} 个重复组生成一个清理计划：按「${KEEP_STRATEGY_LABELS[keepStrategy.value]}」，` +
+      `其余 ${total} 个文件移入安全区（可整体撤销）。确认？`,
       '一键清理全部重复组', { type: 'warning' })
   } catch {
     return
   }
   try {
     const { data: plan } = await api.createPlan({
-      kind: 'DUPLICATE_CLEANUP_ALL', refId: selectedScanId.value, keepStrategy: 'NEWEST'
+      kind: 'DUPLICATE_CLEANUP_ALL', refId: selectedScanId.value, keepStrategy: keepStrategy.value
     })
     const { data: executed } = await api.execute(plan.id)
     ElMessage.success(`已清理 ${total} 个重复副本（计划 #${executed.id}），可到执行中心撤销`)
@@ -96,47 +135,53 @@ async function cleanAll() {
 }
 
 async function previewGroup(g: DuplicateGroup) {
-  const keepId = keepChoice.value[g.id]
-  const kept = g.members.find(m => m.id === keepId)
-  const keepStrategy = 'NEWEST'
-  const { data } = await api.dryRun({ kind: 'DUPLICATE_CLEANUP', refId: g.id, keepStrategy })
-  preview.value = { ...data, description: `${data.description} —— 保留: ${kept?.path ?? '(最新)'}` }
-  previewGroupId.value = g.id
-  previewVisible.value = true
+  try {
+    const { data } = await api.dryRun({ kind: 'DUPLICATE_CLEANUP', refId: g.id, keepStrategy: keepStrategy.value })
+    const kept = pickKept(g.members, keepStrategy.value)
+    preview.value = { ...data, description: `${data.description} —— 将保留: ${kept?.path ?? '(空组)'}` }
+    previewGroupId.value = g.id
+    previewVisible.value = true
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function createPlanFromPreview() {
   if (!preview.value || !previewGroupId.value) return
-  const { data: created } = await api.createPlan({
-    kind: 'DUPLICATE_CLEANUP',
-    refId: previewGroupId.value,
-    keepStrategy: 'NEWEST'
-  })
-  previewVisible.value = false
-  ElMessage.success(`计划 #${created.id} 已创建，请到「执行中心」执行`)
+  try {
+    const { data: created } = await api.createPlan({
+      kind: 'DUPLICATE_CLEANUP',
+      refId: previewGroupId.value,
+      keepStrategy: keepStrategy.value
+    })
+    previewVisible.value = false
+    ElMessage.success(`计划 #${created.id} 已创建，请到「执行中心」执行`)
+  } catch (e) {
+    ElMessage.error(errText(e))
+  }
 }
 
 async function confirmCreateAndExecute(g: DuplicateGroup) {
-  const keepId = keepChoice.value[g.id]
-  if (!keepId) {
-    ElMessage.warning('请先选择组内要保留的文件')
+  const kept = pickKept(g.members, keepStrategy.value)
+  if (!kept) {
+    ElMessage.warning('该组没有可保留的副本')
     return
   }
-  const kept = g.members.find(m => m.id === keepId)
   try {
-    if (kept) {
-      await ElMessageBox.confirm(
-        `将保留：${kept.path}\n其余 ${g.members.length - 1} 个副本移入安全区（可撤销）。确认？`,
-        '创建并执行清理计划', { type: 'warning' })
-    }
-    const keepStrategy: CreatePlanRequest['keepStrategy'] = 'NEWEST'
-    const { data: plan } = await api.createPlan({ kind: 'DUPLICATE_CLEANUP', refId: g.id, keepStrategy })
+    await ElMessageBox.confirm(
+      `按「${KEEP_STRATEGY_LABELS[keepStrategy.value]}」将保留：${kept.path}\n` +
+      `其余 ${g.members.length - 1} 个副本移入安全区（可撤销）。确认？`,
+      '创建并执行清理计划', { type: 'warning' })
+  } catch {
+    return // 用户点取消
+  }
+  try {
+    const { data: plan } = await api.createPlan({ kind: 'DUPLICATE_CLEANUP', refId: g.id, keepStrategy: keepStrategy.value })
     const { data: executed } = await api.execute(plan.id)
     ElMessage.success(`计划 #${executed.id} 已执行：${executed.status}`)
     if (selectedScanId.value) await selectScan(selectedScanId.value)
-  } catch (e: unknown) {
-    // 用户在确认框点取消时 errText 为 'cancel'，不打扰
-    if (errText(e) !== 'cancel') ElMessage.error(errText(e))
+  } catch (e) {
+    ElMessage.error(errText(e))
   }
 }
 
@@ -146,6 +191,8 @@ function exportCsv() {
 }
 
 refreshScans()
+
+defineExpose({ refresh: refreshScans })
 </script>
 
 <template>
@@ -186,16 +233,25 @@ refreshScans()
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="110">
+      <el-table-column label="操作" width="170">
         <template #default="{ row }">
           <el-button size="small" text type="primary" @click="rescan(row)">重新扫描</el-button>
+          <el-button v-if="row.status === 'RUNNING'" size="small" text type="danger" @click="cancelScan(row)">
+            取消
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <div class="group-head">
       <h4>重复文件组（CONFIRMED，扫描 #{{ selectedScanId ?? '—' }}）</h4>
-      <span>
+      <span class="group-tools">
+        <template v-if="groups.length > 0">
+          <span class="keep-label">保留策略</span>
+          <el-select v-model="keepStrategy" size="small" style="width: 160px">
+            <el-option v-for="(label, s) in KEEP_STRATEGY_LABELS" :key="s" :value="s" :label="label" />
+          </el-select>
+        </template>
         <el-button v-if="selectedScanId" size="small" @click="exportCsv">导出 CSV 报告</el-button>
         <el-button v-if="groups.length > 1" type="danger" size="small" @click="cleanAll">
           一键清理全部（{{ groups.reduce((n, g) => n + g.members.length - 1, 0) }} 个副本）
@@ -211,14 +267,13 @@ refreshScans()
           <el-button size="small" type="danger" @click="confirmCreateAndExecute(g)">创建并执行</el-button>
         </span>
       </div>
-      <el-radio-group v-model="keepChoice[g.id]">
-        <div v-for="m in g.members" :key="m.id" class="member-row">
-          <el-radio :value="m.id">{{ m.path }}（{{ fmtSize(m.size) }}，{{ fmtTime(m.mtime) }}）</el-radio>
-        </div>
-      </el-radio-group>
+      <p class="kept-line">将保留：{{ pickKept(g.members, keepStrategy)?.path }}</p>
+      <div v-for="m in g.members" :key="m.id" class="member-row">
+        {{ m.path }}（{{ fmtSize(m.size) }}，{{ fmtTime(m.mtime) }}）
+      </div>
     </div>
 
-    <el-dialog v-model="previewVisible" title="计划预览（dry-run，不落盘）" width="720px">
+    <el-dialog v-model="previewVisible" title="计划预览（dry-run，不落盘）" width="min(720px, 94vw)">
       <p>{{ preview?.description }}</p>
       <el-table :data="preview?.operations ?? []" size="small" max-height="360">
         <el-table-column prop="type" label="操作" width="170" />
@@ -237,7 +292,10 @@ refreshScans()
 
 <style scoped>
 .group-card { border: 1px solid var(--el-border-color-light); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
-.group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap; }
 .group-head h4 { margin: 0; }
-.member-row { display: block; }
+.group-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.keep-label { font-size: 12px; color: var(--el-text-color-secondary); }
+.kept-line { margin: 0 0 6px; font-size: 13px; color: var(--el-color-success); word-break: break-all; }
+.member-row { display: block; font-size: 13px; line-height: 1.8; word-break: break-all; }
 </style>

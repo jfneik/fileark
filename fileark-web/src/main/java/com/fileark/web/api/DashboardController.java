@@ -1,6 +1,7 @@
 package com.fileark.web.api;
 
 import com.fileark.core.model.Category;
+import com.fileark.core.model.FileMeta;
 import com.fileark.core.port.DuplicateStore;
 import com.fileark.core.port.FileRepository;
 import com.fileark.core.port.PlanStore;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,9 +55,9 @@ public class DashboardController {
                     result.put("latestScan", Map.of(
                             "id", latest.id(), "rootPath", latest.rootPath()));
 
-                    List<com.fileark.core.model.FileMeta> files = fileRepository.byScan(latest.id());
+                    List<FileMeta> files = fileRepository.byScan(latest.id());
                     result.put("indexedFiles", files.size());
-                    result.put("indexedBytes", files.stream().mapToLong(com.fileark.core.model.FileMeta::size).sum());
+                    result.put("indexedBytes", files.stream().mapToLong(FileMeta::size).sum());
 
                     Map<String, Long> categories = new TreeMap<>();
                     files.forEach(f -> categories.merge(
@@ -89,7 +91,7 @@ public class DashboardController {
                 "items", quarantine.size(),
                 "bytes", quarantine.stream().mapToLong(QuarantineItem::size).sum(),
                 "expired", quarantine.stream().filter(i ->
-                        java.time.Instant.now(clock).isAfter(i.purgeAfter())).count()));
+                        Instant.now(clock).isAfter(i.purgeAfter())).count()));
 
         return result;
     }

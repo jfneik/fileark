@@ -263,6 +263,17 @@ public final class InMemoryStores {
         }
 
         @Override
+        public synchronized boolean tryUpdatePlanStatus(long planId, PlanStatus expectedFrom,
+                                                        PlanStatus to, String error) {
+            PlanRow current = plans.get(planId);
+            if (current == null || current.status() != expectedFrom) {
+                return false;
+            }
+            updatePlanStatus(planId, to, error);
+            return true;
+        }
+
+        @Override
         public void updateOperationStatus(long planId, long operationId, OperationStatus status, String error) {
             List<Operation> list = ops.get(planId);
             list.replaceAll(o -> o.id() == operationId
@@ -282,6 +293,11 @@ public final class InMemoryStores {
         @Override
         public void put(String key, String value) {
             kv.put(key, value);
+        }
+
+        @Override
+        public void remove(String key) {
+            kv.remove(key);
         }
 
         @Override

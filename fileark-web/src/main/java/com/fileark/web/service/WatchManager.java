@@ -2,8 +2,10 @@ package com.fileark.web.service;
 
 import com.fileark.core.execute.TransactionalExecutor;
 import com.fileark.core.model.FileMeta;
+import com.fileark.core.plan.Operation;
 import com.fileark.core.plan.PlanStatus;
 import com.fileark.core.plan.Planner;
+import com.fileark.core.plan.Plan;
 import com.fileark.core.port.PlanStore;
 import com.fileark.core.port.RuleStore;
 import com.fileark.core.port.SettingsStore;
@@ -118,8 +120,8 @@ public class WatchManager {
         }
     }
 
-    private List<com.fileark.core.plan.Operation> planOps(FileMeta meta, List<Rule> rules, Path baseDir) {
-        com.fileark.core.plan.Plan draft = planner.fromRules(List.of(meta), rules, baseDir, "auto");
+    private List<Operation> planOps(FileMeta meta, List<Rule> rules, Path baseDir) {
+        Plan draft = planner.fromRules(List.of(meta), rules, baseDir, "auto");
         return draft.operations();
     }
 
