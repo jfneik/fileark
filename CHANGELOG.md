@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-10-12
+
+### 新增
+- **控制台品牌化主题**（`fileark-ui/src/styles/theme.css`）：方舟蓝品牌色整体重定义 Element Plus 色阶；吸顶毛玻璃品牌导航（渐变 Logo 标 + 安全承诺徽章）、胶囊式 Tab、卡片化面板与表格质感、仪表盘四色统计卡（图标徽章 + 悬浮上浮），告别"默认白板脸"
+- **重复组保留策略可选**：扫描查重页新增「保留策略」下拉（保留最新/最旧/路径最靠前，对应后端 `KeepStrategy`），组卡片实时显示"将保留"哪个副本——修复此前单选框不生效、确认弹窗文案与实际保留不符的问题；前端 `pickKept` 与后端决胜规则（并列按路径字典序）逐位一致
+- **取消进行中的扫描**：RUNNING 状态行新增「取消」按钮，接入既有 `POST /api/scans/{id}/cancel`
+- **规则手动应用到目录**：规则管理新增「应用到目录」，试运行预览（dry-run）→ 创建计划 / 创建并执行，打通 `RULE_APPLY` 计划类型的 UI 入口
+- **设置项真删除**：新增 `DELETE /api/settings/{key}`（`SettingsStore.remove`，SQLite 与内存测试桩同步实现），设置页「删」不再只删本地行（此前后端 upsert 合并会让键"复活"）
+
+### 修复
+- 确认框取消不再产生 unhandled rejection（统一 try/catch）；后端不可用时首屏请求有错误提示（仪表盘带重试按钮）
+- SSE：连续发起扫描先关旧连接；网络抖动交给 EventSource 原生重连（浏览器彻底放弃才收尾）；组件卸载清理连接
+- 切 Tab 自动刷新对应面板数据（各 Tab 暴露 `refresh`），不再看到陈旧列表；`keepChoice` 陈旧导致的"跳过确认直接执行"漏洞一并消除
+- `FileEntry.mtime` 类型修正为 `string | null`（与后端 DTO 一致），排序处防空；`fmtSize` 边界（恰为 1GiB/1MiB/1KiB）进位正确
+- axios 增加 30s 超时；弹窗宽度自适应小屏（`min(width, 94vw)`）；仪表盘统计卡响应式断点；README 架构图"七个页面"更正为八个
+
 ## [1.1.1] - 2026-10-07
 
 ### 性能
